@@ -60,6 +60,9 @@ class Config:
     sftp_known_hosts: str = field(default_factory=lambda: os.environ.get("SFTP_KNOWN_HOSTS", ""))
     sftp_remote_dir: str = field(default_factory=lambda: os.environ.get("SFTP_REMOTE_DIR", "/logs"))
     fetch_on_startup: bool = field(default_factory=lambda: _bool_env("FETCH_ON_STARTUP"))
+    file_retention_days: int = field(
+        default_factory=lambda: int(os.environ.get("FILE_RETENTION_DAYS", "400") or 400)
+    )
     fetch_schedule: list[tuple[int, int]] = field(
         default_factory=lambda: _parse_schedule(os.environ.get("FETCH_SCHEDULE", ""))
     )

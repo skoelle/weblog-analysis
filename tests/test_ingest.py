@@ -331,3 +331,71 @@ def test_signature_migration_backfills_existing_rows(tmp_path: Path):
     expected = line_signature(*(row[name] for name in SIG_FIELDS))
     assert bytes(counts[0]["sig"]) == expected
     conn.close()
+
+
+def test_migration_v2_to_v3_backfills_max_day(tmp_path: Path):
+    """An existing database gains max_day without touching its numbers."""
+
+    db_path = tmp_path / "v2.sqlite"
+    conn = connect(db_path)
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO ingested_files(path, size, mtime, lines, parsed, failed, ingested_at) "
+        "VALUES ('access.log.1', 10, 0, 2, 2, 0, '2026-11-14T00:00:00')"
+    )
+    row = {
+        "ts": "2026-11-14 00:00:02",
+        "day": "2026-11-14",
+        "iso_week": "2026-W46",
+        "ip": "192.0.2.0",
+        "net": "192.0.2.0",
+        "ip_version": "v4",
+        "vhost_raw": "www.example.org",
+        "vhost": "example.org",
+        "method": "GET",
+        "path": "/shop/",
+        "status": 200,
+        "bytes": 100,
+        "referer": "-",
+        "ua": CHROME,
+        "category": "browser",
+        "bot_name": None,
+        "is_scanner_path": 0,
+        "is_self": 0,
+        "source_file": "access.log.1",
+        "sig": b"0123456789abcdef",
+    }
+    columns = ", ".join(row)
+    placeholders = ", ".join("?" * len(row))
+    conn.execute(f"INSERT INTO requests ({columns}) VALUES ({placeholders})", tuple(row.values()))
+    # Simulate the old schema: drop the column and the migration marker.
+    conn.execute("ALTER TABLE ingested_files DROP COLUMN max_day")
+    conn.execute("DELETE FROM meta WHERE key = 'max_day_version'")
+    conn.commit()
+    conn.close()
+
+    conn = connect(db_path)
+    init_db(conn)
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 1
+    row_out = conn.execute(
+        "SELECT max_day FROM ingested_files WHERE path='access.log.1'"
+    ).fetchone()
+    assert row_out["max_day"] == "2026-11-14"
+    conn.close()
+
+
+def test_untracked_max_day_row_is_dropped_for_reread(tmp_path: Path):
+    """A file whose rows vanished entirely gets re-read instead of pinned to NULL."""
+    from app.db import _backfill_max_day, _has_column  # noqa: F401 - private on purpose
+
+    db_path = tmp_path / "gap.sqlite"
+    conn = connect(db_path)
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO ingested_files(path, size, mtime, lines, parsed, failed, ingested_at) "
+        "VALUES ('access.log.45.gz', 10, 0, 5, 5, 0, '2026-11-14T00:00:00')"
+    )
+    conn.commit()
+    _backfill_max_day(conn)
+    assert conn.execute("SELECT COUNT(*) FROM ingested_files").fetchone()[0] == 0
+    conn.close()

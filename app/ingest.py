@@ -216,14 +216,19 @@ def _ingest_file(
     )
 
     stat = path.stat()
+    # Newest log day in the file, used by retention. Taken from the parsed
+    # lines, not the file mtime, because mtime changes on every download.
+    max_day = max((item.day for item in parsed), default=None)
     conn.execute(
         """
-        INSERT INTO ingested_files(path, size, mtime, lines, parsed, failed, ingested_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ingested_files(
+            path, size, mtime, lines, parsed, failed, ingested_at, max_day
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
             size=excluded.size, mtime=excluded.mtime, lines=excluded.lines,
             parsed=excluded.parsed, failed=excluded.failed,
-            ingested_at=excluded.ingested_at
+            ingested_at=excluded.ingested_at, max_day=excluded.max_day
         """,
         (
             key,
@@ -233,6 +238,7 @@ def _ingest_file(
             len(parsed),
             failed,
             datetime.now(UTC).isoformat(timespec="seconds"),
+            max_day,
         ),
     )
     return len(insert_rows), failed, max(skipped, 0)

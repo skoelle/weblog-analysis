@@ -21,12 +21,14 @@ import tempfile
 import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Protocol
 
 from .config import Config
 from .config import config as default_config
 from .ingest import ingest
+from .retention import cutoff_for, prune_log_files
 
 log = logging.getLogger(__name__)
 
@@ -220,11 +222,17 @@ def _download_missing(
     dry_run: bool,
     force: bool,
 ) -> tuple[dict[str, int], dict[str, str]]:
-    stats = {"files": 0, "skipped": 0, "downloaded": 0}
+    stats = {"files": 0, "skipped": 0, "downloaded": 0, "retired": 0}
     seen: dict[str, str] = {}
+    cut = cutoff_for(cfg.file_retention_days)
     for entry in client.list_files(cfg.sftp_remote_dir):
         seen[entry.name] = entry.signature
         target = target_dir / entry.name
+        # Retention also applies to the download, otherwise pruning a file
+        # locally would simply make the next fetch bring it back.
+        if cut is not None and _older_than(entry.mtime, cut):
+            stats["retired"] += 1
+            continue
         unchanged = known.get(entry.name) == entry.signature and target.exists()
         # First run without a manifest: adopt a local file of the same size
         # instead of downloading the whole backlog again.
@@ -280,6 +288,16 @@ def fetch_logs(
     return stats
 
 
+def _older_than(mtime: int, cutoff: date) -> bool:
+    """Compare a remote mtime (epoch seconds) against the retention cutoff."""
+    from datetime import datetime
+
+    if not mtime:
+        return False
+    remote_day = datetime.fromtimestamp(mtime).date()
+    return remote_day < cutoff
+
+
 def _same_size(target: Path, size: int) -> bool:
     try:
         return target.is_file() and target.stat().st_size == size
@@ -298,6 +316,9 @@ def fetch_and_ingest(
     result: dict[str, int | dict[str, int]] = dict(fetch_logs(cfg, dry_run=dry_run, force=force))
     if run_ingest and not dry_run:
         result["ingest"] = ingest(cfg, refresh_self=False)
+        # Prune only after a successful ingest: a file must be in the database
+        # before its raw copy is removed.
+        result["retention"] = prune_log_files(cfg)
     return result
 
 
@@ -313,8 +334,12 @@ def main() -> None:
 
     result = fetch_and_ingest(dry_run=args.dry_run, force=args.force, run_ingest=not args.no_ingest)
     fetched = (
-        f"files={result['files']} skipped={result['skipped']} downloaded={result['downloaded']}"
+        f"files={result['files']} skipped={result['skipped']} "
+        f"downloaded={result['downloaded']} retired={result['retired']}"
     )
+    retention = result.get("retention")
+    if isinstance(retention, dict):
+        fetched += f" pruned={retention['pruned']}"
     if isinstance(result.get("ingest"), dict):
         ing = result["ingest"]
         print(

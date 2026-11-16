@@ -1,6 +1,6 @@
 [project]
 name = "weblog-analysis"
-version = "0.2.2"
+version = "0.3.0"
 description = "Web log analysis for combined access logs: weekly visitors, bots and crawling"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }

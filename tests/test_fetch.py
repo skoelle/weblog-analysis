@@ -37,9 +37,13 @@ class FakeClient:
         target.write_bytes(self.files[name][0])
 
 
-def make_config(tmp_path: Path) -> Config:
+def make_config(tmp_path: Path, retention_days: int = 0) -> Config:
     logs = tmp_path / "logs"
-    return Config(log_dir=str(logs), db_path=str(tmp_path / "db.sqlite"))
+    return Config(
+        log_dir=str(logs),
+        db_path=str(tmp_path / "db.sqlite"),
+        file_retention_days=retention_days,
+    )
 
 
 def test_downloads_every_access_log_file(tmp_path: Path):
@@ -325,3 +329,53 @@ def test_downloaded_files_are_world_readable(tmp_path: Path):
     target = Path(cfg.log_dir) / "access.log.47.1"
     assert oct(target.stat().st_mode & 0o777) == "0o644"
     assert oct((tmp_path / MANIFEST_NAME).stat().st_mode & 0o777) == "0o644"
+
+
+def test_retention_skips_old_remote_files(tmp_path: Path):
+    """Pruned files must not be downloaded again."""
+    import time
+
+    cfg = make_config(tmp_path, retention_days=30)
+    now = int(time.time())
+    old = now - 90 * 86400
+    payload = (LINE + "\n").encode()
+
+    client = FakeClient(
+        {
+            "access.log.30.gz": (payload, old),
+            "access.log.47.1": (payload, now),
+        }
+    )
+    stats = fetch_logs(cfg, client=client)
+
+    assert stats["retired"] == 1
+    assert stats["downloaded"] == 1
+    assert client.downloads == ["access.log.47.1"]
+    assert not (Path(cfg.log_dir) / "access.log.30.gz").exists()
+
+
+def test_force_does_not_override_retention(tmp_path: Path):
+    import time
+
+    cfg = make_config(tmp_path, retention_days=30)
+    old = int(time.time()) - 90 * 86400
+    client = FakeClient({"access.log.30.gz": ((LINE + "\n").encode(), old)})
+
+    stats = fetch_logs(cfg, client=client, force=True)
+    assert stats["retired"] == 1
+    assert stats["downloaded"] == 0
+    assert client.downloads == []
+
+
+def test_retired_files_are_recorded_in_manifest(tmp_path: Path):
+    import time
+
+    cfg = make_config(tmp_path, retention_days=30)
+    old = int(time.time()) - 90 * 86400
+    client = FakeClient(
+        {"access.log.30.gz": (b"x\n", old), "access.log.47.1": (b"y\n", int(time.time()))}
+    )
+
+    fetch_logs(cfg, client=client)
+    manifest = read_manifest(tmp_path / MANIFEST_NAME)
+    assert set(manifest) == {"access.log.30.gz", "access.log.47.1"}

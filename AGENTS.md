@@ -64,6 +64,13 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
   hoechste Vorkommenszahl einer einzelnen Datei. Ueberlappende Dateien (Wochen-Bundle +
   Tagesdateien, Teil- + Volldatei) zaehlen dadurch einmal, identische Zeilen **innerhalb**
   einer Datei bleiben erhalten. `line_counts` haelt die Zahlen, `requests.sig` die Zuordnung.
+- **Retention loescht nur Rohlogs, nie DB-Zeilen.** `FILE_RETENTION_DAYS` (Default 400, 0 = aus)
+  prueft das juengste Log-Datum der Datei (`ingested_files.max_day`, nicht die mtime, die
+  beim Download zurueckgesetzt wird). Laeuft nach erfolgreichem Fetch+Ingest und im Fetch
+  selbst (Remote-Zeit), damit geloeschte Dateien nicht zurueckkommen. Mit aktiver Retention
+  ist `--rebuild` endgueltig destruktiv.
+- Kein `VACUUM` im Regelbetrieb: SQLite verwendet freie Pages wieder, der Freelist bleibt
+  flach. Nur nach einem `--rebuild` manuell sinnvoll.
 
 ## Architektur
 
@@ -73,7 +80,8 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
 - `app/ingest.py` – inkrementeller Import, gz/plain, File-Tracking, Zeilen-Dedupe
 - `app/fetch.py` – SFTP-Download (paramiko) mit Manifest, Host-Key-Pflicht, atomarem Schreiben
 - `app/scheduler.py` – asyncio-Loop fuer `FETCH_SCHEDULE` (HH:MM, lokale Zeit)
-- `app/db.py` – Schema inkl. Migration auf `requests.sig` und `line_counts`
+- `app/db.py` – Schema inkl. Migration auf `requests.sig`, `line_counts`, `ingested_files.max_day`
+- `app/retention.py` – loescht Rohlogs nach `FILE_RETENTION_DAYS`, `--dry-run` und `--days`
 - `app/queries.py` – Wochen-/Vhost-/Netz-/Bot-Aggregationen (reines SQL).
   Statusfilter ueber `status_class` (`2xx|3xx|4xx|5xx`) laeuft durch alle
   Aggregationen inkl. `week_overview` und `net_detail`.

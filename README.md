@@ -97,6 +97,36 @@ So fetching the weekly bundle next to its daily files, or re-reading a partial
 file once it is complete, never changes the totals. The numbers stay stable no
 matter in which order files arrive.
 
+### Retention
+
+Only raw log files are cleaned up, never database rows: the weekly history in
+SQLite is the product, the logs are just the re-fetchable input. With
+`FILE_RETENTION_DAYS` (default `400`, `0` disables it) a file is deleted once
+its **newest log line** is older than the cutoff. The file mtime is not used
+because it resets on every download.
+
+The cleanup runs automatically after a successful fetch and ingest, and can be
+triggered by hand:
+
+```bash
+python -m app.retention --dry-run          # list candidates only
+python -m app.retention --days 90          # override the configured value
+```
+
+Two consequences worth knowing:
+
+- The fetch applies the same cutoff using the remote file time, so a pruned
+  file is not downloaded again on the next run. `--force` does not override
+  this.
+- **With active retention, `--rebuild` becomes destructive.** It drops the
+  database and re-imports from disk, but weeks whose files were pruned and also
+  no longer exist on the host are gone for good.
+
+`VACUUM` is not part of the pipeline: SQLite reuses free pages on the next
+insert, and the freelist stays flat during normal operation. Only run
+`VACUUM` manually after a `--rebuild`, where a large one-off delete leaves a
+permanently bloated file.
+
 ## Quick start (local)
 
 ```bash
@@ -129,6 +159,7 @@ All settings come from environment variables (see `.env.example`):
 | `SFTP_REMOTE_DIR` | `/logs` | Remote directory scanned for `access.log*` |
 | `FETCH_SCHEDULE` | empty | Comma separated `HH:MM` local times for automatic fetches |
 | `FETCH_ON_STARTUP` | `false` | Run one fetch when the app starts |
+| `FILE_RETENTION_DAYS` | `400` | Delete raw log files older than this; `0` disables |
 
 Either `SFTP_HOST_KEY` or `SFTP_KNOWN_HOSTS` is required; the fetch refuses to
 connect without a verified host key.

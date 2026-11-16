@@ -9,7 +9,8 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+LINE_COUNTS_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -24,7 +25,8 @@ CREATE TABLE IF NOT EXISTS ingested_files (
     lines       INTEGER NOT NULL,
     parsed      INTEGER NOT NULL,
     failed      INTEGER NOT NULL,
-    ingested_at TEXT NOT NULL
+    ingested_at TEXT NOT NULL,
+    max_day     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS requests (
@@ -149,17 +151,44 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_requests_sig ON requests(sig)")
 
     row = conn.execute("SELECT value FROM meta WHERE key = 'line_counts_version'").fetchone()
-    if row and row["value"] == str(SCHEMA_VERSION):
-        return
+    if not (row and row["value"] == str(LINE_COUNTS_VERSION)):
+        _backfill_signatures(conn)
+        current = conn.execute("SELECT COUNT(*) FROM line_counts").fetchone()[0]
+        if not current:
+            _build_line_counts(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('line_counts_version', ?)",
+            (str(LINE_COUNTS_VERSION),),
+        )
 
-    _backfill_signatures(conn)
-    current = conn.execute("SELECT COUNT(*) FROM line_counts").fetchone()[0]
-    if not current:
-        _build_line_counts(conn)
+    if not _has_column(conn, "ingested_files", "max_day"):
+        conn.execute("ALTER TABLE ingested_files ADD COLUMN max_day TEXT")
+
+    row = conn.execute("SELECT value FROM meta WHERE key = 'max_day_version'").fetchone()
+    if not (row and row["value"] == str(SCHEMA_VERSION)):
+        _backfill_max_day(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('max_day_version', ?)",
+            (str(SCHEMA_VERSION),),
+        )
+
+
+def _backfill_max_day(conn: sqlite3.Connection) -> None:
+    """Fill ``max_day`` for files tracked before the column existed.
+
+    Files whose lines were fully deduplicated away have no rows of their own.
+    Dropping their tracking row makes the next ingest read them once more, so
+    the retention logic always has a real date to work with.
+    """
     conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES('line_counts_version', ?)",
-        (str(SCHEMA_VERSION),),
+        """
+        UPDATE ingested_files SET max_day = (
+            SELECT MAX(day) FROM requests WHERE requests.source_file = ingested_files.path
+        )
+        WHERE max_day IS NULL
+        """
     )
+    conn.execute("DELETE FROM ingested_files WHERE max_day IS NULL")
 
 
 def init_db(conn: sqlite3.Connection) -> None:
