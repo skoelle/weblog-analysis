@@ -1,0 +1,15 @@
+services:
+  weblog-analysis:
+    build: .
+    image: ghcr.io/skoelle/weblog-analysis:latest
+    container_name: weblog-analysis
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      # Host directory that holds the access logs; override LOG_DIR if it is
+      # mounted somewhere else in the container.
+      - ${LOG_HOST_DIR:-./data/logs}:/logs:ro
+    ports:
+      - "8095:8095"

@@ -1,0 +1,483 @@
+<!doctype html>
+<!-- Copyright (c) 2026 Stefan Koelle (https://stefankoelle.de) -->
+<!-- Licensed under the MIT License. See LICENSE file in project root for details. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Weblog Analysis</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #171e26;
+    --panel-2: #1e2732;
+    --border: #2b3644;
+    --text: #d7e0ea;
+    --muted: #8a99a8;
+    --accent: #4aa3ff;
+    --human: #3ecf8e;
+    --bot: #f0a53e;
+    --scanner: #ef5b5b;
+    --other: #8a7fbf;
+    --search: #4aa3ff;
+    --ai: #c084fc;
+    --monitor: #38bdf8;
+    --scraper: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    background: var(--panel); position: sticky; top: 0; z-index: 20;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  select, button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 13px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1d4ed8; border-color: #1d4ed8; }
+  main { padding: 20px; max-width: 1500px; margin: 0 auto; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .card .v { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .card .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  section { margin-bottom: 28px; }
+  section h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: var(--text); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1000px) { .grid-2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; position: sticky; top: 0; background: var(--panel); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: var(--panel-2); }
+  tbody tr.clickable { cursor: pointer; }
+  .scroll { max-height: 420px; overflow: auto; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .b-browser { background: #123a2c; color: var(--human); }
+  .b-search_bot { background: #10283f; color: var(--search); }
+  .b-ai_bot { background: #2c1a45; color: var(--ai); }
+  .b-monitoring { background: #0e3340; color: var(--monitor); }
+  .b-scraper { background: #3d2c10; color: var(--scraper); }
+  .b-scanner { background: #3d1717; color: var(--scanner); }
+  .b-empty, .b-other { background: #26303a; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .tag { font-size: 11px; color: var(--muted); }
+  .bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; display: flex; }
+  .bar > span { display: block; height: 100%; }
+  #netModal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 50; }
+  #netModal.open { display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto; }
+  #netModal .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(1000px, 100%); padding: 18px; }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .modal-head h3 { margin: 0; font-size: 15px; }
+  .empty-msg { color: var(--muted); padding: 12px 0; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Weblog Analysis <span>· combined access logs</span></h1>
+  <div class="controls">
+    <label>Week <select id="fWeek"><option value="">All weeks</option></select></label>
+    <label>Vhost <select id="fVhost"><option value="">All vhosts</option></select></label>
+    <label>Category
+      <select id="fCategory">
+        <option value="">All</option>
+        <option value="browser">Human (browser)</option>
+        <option value="search_bot">Search bots</option>
+        <option value="ai_bot">AI bots</option>
+        <option value="monitoring">Monitoring</option>
+        <option value="scraper">Scrapers</option>
+        <option value="scanner">Scanners</option>
+        <option value="empty">No UA</option>
+        <option value="other">Other</option>
+      </select>
+    </label>
+    <label>Status
+      <select id="fStatus">
+        <option value="">All</option>
+        <option value="2xx">2xx Success</option>
+        <option value="3xx">3xx Redirect</option>
+        <option value="4xx">4xx Client error</option>
+        <option value="5xx">5xx Server error</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="fExcludeSelf" /> Exclude own traffic</label>
+    <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
+  </div>
+</header>
+
+<main>
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>Weekly visitors and traffic</h2>
+    <div class="panel">
+      <div id="chartWeeks"></div>
+      <div class="legend">
+        <span><i style="background:var(--human)"></i>Human hits</span>
+        <span><i style="background:var(--bot)"></i>Bot hits</span>
+        <span><i style="background:var(--scanner)"></i>Scanners</span>
+        <span><i style="background:var(--other)"></i>Other / no UA</span>
+        <span><i style="background:var(--accent)"></i>Unique networks (line)</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid-2">
+    <section>
+      <h2>Categories</h2>
+      <div class="panel"><div id="tblCategories"></div></div>
+    </section>
+    <section>
+      <h2>Vhosts</h2>
+      <div class="panel scroll"><div id="tblVhosts"></div></div>
+    </section>
+  </div>
+
+  <div class="grid-2">
+    <section>
+      <h2>Bots and crawlers</h2>
+      <div class="panel scroll"><div id="tblBots"></div></div>
+    </section>
+    <section>
+      <h2>Top paths</h2>
+      <div class="panel scroll"><div id="tblPaths"></div></div>
+    </section>
+  </div>
+
+  <section>
+    <h2>Top networks / visitors <span class="tag">(click a row for details)</span></h2>
+    <div class="panel scroll"><div id="tblNets"></div></div>
+  </section>
+
+  <div class="grid-2">
+    <section>
+      <h2>Status codes</h2>
+      <div class="panel"><div id="tblStatus"></div></div>
+    </section>
+    <section>
+      <h2>Top referers</h2>
+      <div class="panel scroll"><div id="tblReferers"></div></div>
+    </section>
+  </div>
+</main>
+
+<div id="netModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="netTitle">Network</h3>
+      <button id="netClose">Close</button>
+    </div>
+    <div id="netBody"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { weeks: [], vhosts: [] };
+
+function filters() {
+  const p = new URLSearchParams();
+  const w = $("fWeek").value, v = $("fVhost").value, c = $("fCategory").value;
+  const s = $("fStatus").value;
+  if (w) p.set("week", w);
+  if (v) p.set("vhost", v);
+  if (c) p.set("category", c);
+  if (s) p.set("status_class", s);
+  if ($("fExcludeSelf").checked) p.set("exclude_self", "true");
+  return p;
+}
+
+function filtersForOverview() {
+  const p = new URLSearchParams();
+  if ($("fExcludeSelf").checked) p.set("exclude_self", "true");
+  const s = $("fStatus").value;
+  if (s) p.set("status_class", s);
+  return p;
+}
+
+async function api(path, params) {
+  const qs = params && params.toString() ? "?" + params.toString() : "";
+  const res = await fetch(path + qs);
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res.json();
+}
+
+const num = (n) => (n == null ? "-" : Number(n).toLocaleString("en-US"));
+const catClass = (c) => `badge b-${c || "other"}`;
+const catLabel = (c) => ({
+  browser: "Human", search_bot: "Search bot", ai_bot: "AI bot",
+  monitoring: "Monitoring", scraper: "Scraper", scanner: "Scanner",
+  empty: "No UA", other: "Other",
+}[c] || c || "-");
+
+function table(rows, columns, opts = {}) {
+  if (!rows || !rows.length) return '<div class="empty-msg">No data for this selection.</div>';
+  const head = columns.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("");
+  const body = rows.map((r) => {
+    const cls = opts.rowClass ? opts.rowClass(r) : "";
+    const cells = columns.map((c) => {
+      const val = c.render ? c.render(r) : r[c.key];
+      return `<td class="${c.num ? "num" : ""}">${val == null ? "-" : val}</td>`;
+    }).join("");
+    const data = opts.rowAttr ? opts.rowAttr(r) : "";
+    return `<tr class="${cls}" ${data}>${cells}</tr>`;
+  }).join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderCards(data) {
+  const totalHits = data.reduce((a, w) => a + w.hits, 0);
+  const human = data.reduce((a, w) => a + w.human_hits, 0);
+  const bot = data.reduce((a, w) => a + w.bot_hits, 0);
+  const scanner = data.reduce((a, w) => a + w.scanner_hits, 0);
+  const nets = data.length ? Math.max(...data.map((w) => w.unique_nets)) : 0;
+  const pct = (v) => totalHits ? ((100 * v / totalHits).toFixed(1) + "%") : "-";
+  const cards = [
+    ["Requests", num(totalHits), `${data.length} weeks`],
+    ["Human share", pct(human), `${num(human)} hits`],
+    ["Bot share", pct(bot), `${num(bot)} hits`],
+    ["Scanner share", pct(scanner), `${num(scanner)} hits`],
+    ["Networks / week", num(nets), "peak unique /24+/48"],
+  ];
+  $("cards").innerHTML = cards.map(([k, v, s]) =>
+    `<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+}
+
+function svgBars(weeks) {
+  const W = 1100, H = 300, padL = 52, padR = 52, padT = 14, padB = 52;
+  const n = weeks.length;
+  if (!n) return '<div class="empty-msg">No data.</div>';
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const maxHits = Math.max(...weeks.map((w) => w.hits), 1);
+  const maxNets = Math.max(...weeks.map((w) => w.unique_nets), 1);
+  const bw = iw / n;
+  const barW = Math.min(bw * 0.62, 48);
+  const yHits = (v) => padT + ih - (v / maxHits) * ih;
+  const yNets = (v) => padT + ih - (v / maxNets) * ih;
+  let bars = "", line = [], labels = "";
+  weeks.forEach((w, i) => {
+    const x = padL + bw * i + (bw - barW) / 2;
+    const parts = [
+      [w.human_hits, "var(--human)"],
+      [w.bot_hits, "var(--bot)"],
+      [w.scanner_hits, "var(--scanner)"],
+      [w.other_hits, "var(--other)"],
+    ];
+    let acc = 0;
+    parts.forEach(([v, color]) => {
+      if (!v) return;
+      const h = (v / maxHits) * ih;
+      const y = padT + ih - ((acc + v) / maxHits) * ih;
+      bars += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h, 0.5)}" fill="${color}" rx="1"><title>${w.iso_week}: ${num(v)}</title></rect>`;
+      acc += v;
+    });
+    const cx = padL + bw * i + bw / 2;
+    line.push([cx, yNets(w.unique_nets), w.iso_week, w.unique_nets]);
+    labels += `<text x="${cx}" y="${H - 34}" text-anchor="middle" fill="var(--muted)" font-size="10">${w.iso_week.replace("2026-W", "W")}</text>`;
+    labels += `<text x="${cx}" y="${H - 19}" text-anchor="middle" fill="var(--muted)" font-size="9">${num(w.unique_nets)} nets</text>`;
+  });
+  const path = line.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join(" ");
+  const dots = line.map(([x, y, wk, v]) =>
+    `<circle cx="${x}" cy="${y}" r="3" fill="var(--accent)"><title>${wk}: ${num(v)} unique networks</title></circle>`).join("");
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const y = padT + ih - f * ih;
+    const hv = Math.round(maxHits * f), nv = Math.round(maxNets * f);
+    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-dasharray="2 4"/>
+      <text x="${padL - 8}" y="${y + 3}" text-anchor="end" fill="var(--muted)" font-size="10">${num(hv)}</text>
+      <text x="${W - padR + 8}" y="${y + 3}" fill="var(--muted)" font-size="10">${num(nv)}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">
+    ${grid}${bars}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}${labels}
+    <text x="${padL}" y="10" fill="var(--muted)" font-size="10">hits (left)</text>
+    <text x="${W - padR}" y="10" text-anchor="end" fill="var(--muted)" font-size="10">unique networks (right)</text>
+  </svg>`;
+}
+
+async function loadOverview() {
+  const rows = await api("/api/weeks", filtersForOverview());
+  renderCards(rows);
+  $("chartWeeks").innerHTML = svgBars(rows);
+}
+
+async function loadCategories() {
+  const rows = await api("/api/categories", filters());
+  const total = rows.reduce((a, r) => a + r.hits, 0) || 1;
+  $("tblCategories").innerHTML = table(rows, [
+    { label: "Category", render: (r) => `<span class="${catClass(r.category)}">${catLabel(r.category)}</span>` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+    { label: "Share", num: true, render: (r) => (100 * r.hits / total).toFixed(1) + "%" },
+    { label: "Networks", num: true, render: (r) => num(r.unique_nets) },
+  ]);
+}
+
+async function loadVhosts() {
+  const rows = await api("/api/vhosts", filters());
+  $("tblVhosts").innerHTML = table(rows, [
+    { label: "Vhost", render: (r) => `<span class="mono">${r.vhost}</span>` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+    { label: "Human", num: true, render: (r) => num(r.human_hits) },
+    { label: "Scanners", num: true, render: (r) => num(r.scanner_hits) },
+    { label: "Networks", num: true, render: (r) => num(r.unique_nets) },
+  ]);
+}
+
+async function loadBots() {
+  const rows = await api("/api/bots", filters());
+  $("tblBots").innerHTML = table(rows, [
+    { label: "Bot", render: (r) => `<span class="mono">${r.name}</span>` },
+    { label: "Type", render: (r) => `<span class="${catClass(r.category)}">${catLabel(r.category)}</span>` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+    { label: "Networks", num: true, render: (r) => num(r.unique_nets) },
+  ]);
+}
+
+async function loadPaths() {
+  const rows = await api("/api/paths", filters());
+  $("tblPaths").innerHTML = table(rows, [
+    { label: "Path", render: (r) => `<span class="mono">${escapeHtml(r.path)}</span>` },
+    { label: "Vhost", render: (r) => `<span class="tag">${r.vhost}</span>` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+    { label: "Networks", num: true, render: (r) => num(r.unique_nets) },
+  ]);
+}
+
+async function loadNets() {
+  const p = filters();
+  p.set("limit", "100");
+  const rows = await api("/api/nets", p);
+  $("tblNets").innerHTML = table(rows, [
+    { label: "Network", render: (r) => `<span class="mono">${r.net}</span>${r.ip_version === "v6" ? ' <span class="tag">v6</span>' : ""}` },
+    { label: "Type", render: (r) => `<span class="${catClass(r.category)}">${catLabel(r.category)}</span>${r.bot_name ? ` <span class="tag">${r.bot_name}</span>` : ""}${r.is_self ? ' <span class="tag">own</span>' : ""}` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+    { label: "Vhosts", num: true, render: (r) => num(r.vhosts) },
+  ], {
+    rowClass: () => "clickable",
+    rowAttr: (r) => `data-net="${r.net}"`,
+  });
+  document.querySelectorAll("#tblNets tbody tr").forEach((tr) => {
+    tr.addEventListener("click", () => openNet(tr.dataset.net));
+  });
+}
+
+async function loadStatus() {
+  const rows = await api("/api/status", filters());
+  $("tblStatus").innerHTML = table(rows, [
+    { label: "Status", render: (r) => `<span class="mono">${r.status}</span>` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+  ]);
+}
+
+async function loadReferers() {
+  const rows = await api("/api/referers", filters());
+  $("tblReferers").innerHTML = table(rows, [
+    { label: "Referer", render: (r) => `<span class="mono">${escapeHtml(r.referer)}</span>` },
+    { label: "Requests", num: true, render: (r) => num(r.hits) },
+  ]);
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+async function refreshAll() {
+  try {
+    await Promise.all([
+      loadOverview(), loadCategories(), loadVhosts(), loadBots(),
+      loadPaths(), loadNets(), loadStatus(), loadReferers(),
+    ]);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function openNet(net) {
+  const p = new URLSearchParams();
+  const w = $("fWeek").value;
+  const statusClass = $("fStatus").value;
+  if (w) p.set("week", w);
+  if (statusClass) p.set("status_class", statusClass);
+  const data = await api(`/api/nets/${encodeURIComponent(net)}`, p);
+  const s = data.summary;
+  $("netTitle").textContent = `Network ${s.net} · ${s.sample_ip}`;
+  const cats = data.categories.map((c) =>
+    `<span class="${catClass(c.category)}">${catLabel(c.category)}${c.bot_name ? " · " + c.bot_name : ""}</span> ${num(c.hits)}`).join(" &nbsp; ");
+  const reqs = table(data.requests, [
+    { label: "Time", render: (r) => `<span class="mono">${r.ts.replace("T", " ")}</span>` },
+    { label: "Method", render: (r) => r.method },
+    { label: "Path", render: (r) => `<span class="mono">${escapeHtml(r.path)}</span>` },
+    { label: "Status", num: true, render: (r) => r.status },
+    { label: "Vhost", render: (r) => `<span class="tag">${r.vhost}</span>` },
+    { label: "Category", render: (r) => `<span class="${catClass(r.category)}">${catLabel(r.category)}</span>` },
+  ]);
+  $("netBody").innerHTML = `
+    <div class="cards" style="margin-bottom:14px">
+      <div class="card"><div class="k">Requests</div><div class="v">${num(s.hits)}</div></div>
+      <div class="card"><div class="k">Human hits</div><div class="v">${num(s.human_hits)}</div></div>
+      <div class="card"><div class="k">First seen</div><div class="v" style="font-size:14px">${s.first_seen?.replace("T", " ")}</div></div>
+      <div class="card"><div class="k">Last seen</div><div class="v" style="font-size:14px">${s.last_seen?.replace("T", " ")}</div></div>
+    </div>
+    <p>${cats}</p>
+    <div class="scroll">${reqs}</div>`;
+  $("netModal").classList.add("open");
+}
+
+$("netClose").addEventListener("click", () => $("netModal").classList.remove("open"));
+$("netModal").addEventListener("click", (e) => {
+  if (e.target.id === "netModal") $("netModal").classList.remove("open");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") $("netModal").classList.remove("open");
+});
+
+$("btnIngest").addEventListener("click", async () => {
+  const btn = $("btnIngest");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Ingesting';
+  try {
+    const stats = await fetch("/api/ingest", { method: "POST" }).then((r) => r.json());
+    btn.textContent = `${stats.files} files`;
+    await refreshAll();
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  } catch (e) {
+    btn.textContent = "Failed";
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  }
+});
+
+["fWeek", "fVhost", "fCategory", "fStatus"].forEach((id) => $(id).addEventListener("change", refreshAll));
+$("fExcludeSelf").addEventListener("change", refreshAll);
+
+async function init() {
+  const f = await api("/api/filters");
+  state.weeks = f.weeks; state.vhosts = f.vhosts;
+  const week = $("fWeek"), vhost = $("fVhost");
+  state.weeks.forEach((w) => week.insertAdjacentHTML("beforeend", `<option value="${w}">${w}</option>`));
+  state.vhosts.forEach((v) => vhost.insertAdjacentHTML("beforeend", `<option value="${v}">${v}</option>`));
+  const latest = state.weeks[state.weeks.length - 1];
+  if (latest) week.value = latest;
+  await refreshAll();
+}
+
+init();
+</script>
+</body>
+</html>

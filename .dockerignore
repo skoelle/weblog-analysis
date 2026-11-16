@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+*.egg-info
+data
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+AGENTS*.md

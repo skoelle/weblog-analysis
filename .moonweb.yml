@@ -1,0 +1,6 @@
+title: "Weblog Analysis"
+emoji: "📊"
+category: code
+subcategory: "Apps"
+status: active
+stack: [Python, FastAPI, SQLite, Docker]

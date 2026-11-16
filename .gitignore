@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+data/
+.env
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+AGENTS.local.md
