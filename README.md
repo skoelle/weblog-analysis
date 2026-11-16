@@ -111,7 +111,7 @@ All settings come from environment variables (see `.env.example`):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LOG_DIR` | `/logs` | Directory with `access.log*` files; the only input of the tool |
+| `LOG_DIR` | `/app/data/logs` | Directory with `access.log*` files; the only input of the tool |
 | `DB_PATH` | `/app/data/weblog.sqlite` | SQLite database file |
 | `HISTORY_URL` | empty | dyndns-updater history endpoint for own-IP detection |
 | `SELF_NETWORKS` | empty | Extra own networks, comma separated |

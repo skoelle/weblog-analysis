@@ -37,7 +37,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
 
 @dataclass
 class Config:
-    log_dir: str = field(default_factory=lambda: os.environ.get("LOG_DIR", "/logs"))
+    log_dir: str = field(default_factory=lambda: os.environ.get("LOG_DIR", "/app/data/logs"))
     db_path: str = field(
         default_factory=lambda: os.environ.get("DB_PATH", "/app/data/weblog.sqlite")
     )
