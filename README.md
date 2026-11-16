@@ -30,10 +30,13 @@ resolution gives you. For anonymised input a "visitor" always means **a network
 
 ## Quick start (Docker)
 
+The compose file pulls the published image, so no checkout or build is needed:
+
 ```bash
 cp .env.example .env
 # fill in SFTP_HOST, SFTP_USER, SFTP_PASS, SFTP_HOST_KEY (see below)
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose exec weblog-analysis python -m app.fetch
 ```
 
@@ -42,7 +45,8 @@ then ingests them. Open <http://localhost:8095>; the **Fetch** and **Ingest**
 buttons in the header do the same on demand.
 
 With `FETCH_SCHEDULE=01:30` the container fetches on its own once a day, which
-fits hosts that rotate logs shortly after midnight.
+fits hosts that rotate logs shortly after midnight. The clock comes from `TZ`;
+without it the container runs in UTC and the slot would fire an hour late.
 
 ### Published image
 
@@ -116,6 +120,7 @@ All settings come from environment variables (see `.env.example`):
 | `HISTORY_URL` | empty | dyndns-updater history endpoint for own-IP detection |
 | `SELF_NETWORKS` | empty | Extra own networks, comma separated |
 | `HOST` / `PORT` | `0.0.0.0` / `8095` | Web server bind |
+| `TZ` | container default (UTC) | Timezone for `FETCH_SCHEDULE`, e.g. `Europe/Berlin` |
 | `VHOST_ALIASES` | empty | Extra `from=to` mappings, comma separated |
 | `SFTP_HOST` / `SFTP_PORT` | empty / `22` | SFTP server for the built-in fetch |
 | `SFTP_USER` / `SFTP_PASS` | empty | SFTP credentials |

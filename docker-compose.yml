@@ -1,7 +1,7 @@
 services:
   weblog-analysis:
-    build: .
     image: ghcr.io/skoelle/weblog-analysis:latest
+    pull_policy: always
     container_name: weblog-analysis
     restart: unless-stopped
     env_file:
