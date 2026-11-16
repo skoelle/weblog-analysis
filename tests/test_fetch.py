@@ -314,3 +314,14 @@ def test_host_key_match_allows_connect(tmp_path: Path, monkeypatch):
     client._connect()
     assert client._transport is not None
     client.close()
+
+
+def test_downloaded_files_are_world_readable(tmp_path: Path):
+    """The data volume is shared with the host, so 0600 from mkstemp is wrong."""
+    cfg = make_config(tmp_path)
+    client = FakeClient({"access.log.47.1": ((LINE + "\n").encode(), 2000)})
+    fetch_logs(cfg, client=client)
+
+    target = Path(cfg.log_dir) / "access.log.47.1"
+    assert oct(target.stat().st_mode & 0o777) == "0o644"
+    assert oct((tmp_path / MANIFEST_NAME).stat().st_mode & 0o777) == "0o644"

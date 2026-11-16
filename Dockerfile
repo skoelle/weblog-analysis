@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ARG VERSION=0.2.1
+ARG VERSION=0.2.2
 LABEL org.opencontainers.image.title="weblog-analysis" \
       org.opencontainers.image.description="Analyse von Apache/nginx-Access-Logs mit Vhost-Feld: Wochen, Netze, Bots, Scanner" \
       org.opencontainers.image.source="https://github.com/skoelle/weblog-analysis" \

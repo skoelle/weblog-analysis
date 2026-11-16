@@ -13,6 +13,7 @@ file. Without either the fetch refuses to connect.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import stat
@@ -199,6 +200,7 @@ def write_manifest(path: Path, entries: dict[str, str]) -> None:
         with os.fdopen(fd, "w") as handle:
             for name in sorted(entries):
                 handle.write(f"{name}\t{entries[name]}\n")
+        tmp.chmod(0o644)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -238,6 +240,9 @@ def _download_missing(
             client.download(cfg.sftp_remote_dir, entry.name, target)
         except Exception as exc:
             raise FetchError(f"Download von {entry.name} fehlgeschlagen: {exc}") from exc
+        # The data volume is shared with the host; mkstemp creates 0600.
+        with contextlib.suppress(OSError):
+            target.chmod(0o644)
         stats["downloaded"] += 1
         log.info("geladen: %s (%d Bytes)", entry.name, entry.size)
     return stats, seen
