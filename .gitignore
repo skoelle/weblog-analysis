@@ -10,3 +10,4 @@ data/
 *.sqlite-wal
 *.sqlite-shm
 AGENTS.local.md
+opencode.json
