@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,7 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from . import queries
 from .config import config
 from .db import connect, init_db
+from .fetch import fetch_and_ingest
 from .ingest import ingest
+from .scheduler import scheduler_loop
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -34,7 +38,21 @@ async def lifespan(app: FastAPI):
     conn = get_conn()
     init_db(conn)
     conn.close()
-    yield
+
+    tasks: list[asyncio.Task] = []
+    if config.fetch_on_startup:
+        tasks.append(asyncio.create_task(asyncio.to_thread(fetch_and_ingest, config)))
+    if config.fetch_schedule:
+        tasks.append(asyncio.create_task(scheduler_loop(config)))
+
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(title="Weblog Analysis", lifespan=lifespan)
@@ -209,6 +227,14 @@ def referers(
 def trigger_ingest(rebuild: bool = False) -> dict:
     stats = ingest(rebuild_first=rebuild)
     return stats
+
+
+@app.post("/api/fetch")
+def trigger_fetch(force: bool = False) -> dict:
+    try:
+        return fetch_and_ingest(config, force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/")

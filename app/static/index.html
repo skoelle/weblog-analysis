@@ -117,6 +117,7 @@
       </select>
     </label>
     <label><input type="checkbox" id="fExcludeSelf" /> Exclude own traffic</label>
+    <button id="btnFetch" title="Download new log files over SFTP">Fetch</button>
     <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
   </div>
 </header>
@@ -445,6 +446,23 @@ $("netModal").addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $("netModal").classList.remove("open");
+});
+
+$("btnFetch").addEventListener("click", async () => {
+  const btn = $("btnFetch");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching';
+  try {
+    const stats = await fetch("/api/fetch", { method: "POST" }).then((r) => r.json());
+    const inserted = stats.ingest ? stats.ingest.inserted : 0;
+    btn.textContent = `${stats.downloaded} files, ${inserted} new`;
+    await refreshAll();
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  } catch (e) {
+    btn.textContent = "Failed";
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  }
 });
 
 $("btnIngest").addEventListener("click", async () => {

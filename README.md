@@ -32,13 +32,17 @@ resolution gives you. For anonymised input a "visitor" always means **a network
 
 ```bash
 cp .env.example .env
-# point LOG_HOST_DIR at the directory that holds your access.log* files
+# fill in SFTP_HOST, SFTP_USER, SFTP_PASS, SFTP_HOST_KEY (see below)
 docker compose up -d --build
-docker compose exec weblog-analysis python -m app.ingest
+docker compose exec weblog-analysis python -m app.fetch
 ```
 
-Open <http://localhost:8095>. Press **Ingest** in the header to pick up new or
-changed log files at any time.
+`app.fetch` downloads new logs into `LOG_DIR` (`/app/data/logs` by default) and
+then ingests them. Open <http://localhost:8095>; the **Fetch** and **Ingest**
+buttons in the header do the same on demand.
+
+With `FETCH_SCHEDULE=01:30` the container fetches on its own once a day, which
+fits hosts that rotate logs shortly after midnight.
 
 ### Published image
 
@@ -47,14 +51,47 @@ Every push to `main` and every `v*` tag builds a container image:
 ```bash
 docker run -d --name weblog-analysis \
   -p 8095:8095 \
-  -v /path/to/logs:/logs:ro \
   -v /path/to/data:/app/data \
-  -e TZ=Europe/Berlin \
+  --env-file .env \
   ghcr.io/skoelle/weblog-analysis:latest
 ```
 
-Then run the first import with
-`docker exec weblog-analysis python -m app.ingest`.
+## Where logs come from
+
+`LOG_DIR` is the only input of the tool: a directory containing `access.log*`
+files. How they get there is up to you.
+
+| Producer | Setup |
+|---|---|
+| SFTP fetch (built in) | set `SFTP_*`; files land in `LOG_DIR` next to the database |
+| Bind mount | uncomment the `LOG_HOST_DIR` volume in `docker-compose.yml`, set `LOG_DIR=/logs` |
+| Copy | `docker cp access.log.1 weblog-analysis:/app/data/logs/` or drop files into the data volume |
+
+The SFTP fetch needs a verified host key. Either pin the fingerprint:
+
+```bash
+ssh-keyscan -t ed25519 sftp.example.org | ssh-keygen -lf -
+# SFTP_HOST_KEY=SHA256:...
+```
+
+or point `SFTP_KNOWN_HOSTS` at a `known_hosts` file. Without one of the two the
+fetch refuses to connect — there is no automatic trust on first use.
+
+### Deduplication
+
+Hosts overlap their files: a weekly bundle contains the same lines as the split
+daily files, and a log that was half-downloaded earlier shows up again in full
+later. Ingestion therefore works on line signatures, not file names:
+
+- Per signature the database keeps the highest occurrence count seen in any
+  single file.
+- Overlaps between files count once.
+- Repeated identical lines inside one file are real requests (scanner bursts do
+  this) and are preserved.
+
+So fetching the weekly bundle next to its daily files, or re-reading a partial
+file once it is complete, never changes the totals. The numbers stay stable no
+matter in which order files arrive.
 
 ## Quick start (local)
 
@@ -74,46 +111,43 @@ All settings come from environment variables (see `.env.example`):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LOG_DIR` | `/logs` | Directory with `access.log*` files (gz and plain) |
-| `LOG_HOST_DIR` | `./data/logs` | Host directory that compose mounts at `LOG_DIR` |
+| `LOG_DIR` | `/logs` | Directory with `access.log*` files; the only input of the tool |
 | `DB_PATH` | `/app/data/weblog.sqlite` | SQLite database file |
 | `HISTORY_URL` | empty | dyndns-updater history endpoint for own-IP detection |
 | `SELF_NETWORKS` | empty | Extra own networks, comma separated |
 | `HOST` / `PORT` | `0.0.0.0` / `8095` | Web server bind |
 | `VHOST_ALIASES` | empty | Extra `from=to` mappings, comma separated |
-| `SFTP_HOST` / `SFTP_USER` / `SFTP_PASS` | empty | Only used by `scripts/fetch-logs.sh` |
-| `FETCH_LOG_DIR` | `./data/logs` | Download target of `scripts/fetch-logs.sh` |
-| `REMOTE_DIR` | `/logs` | Remote log directory on the SFTP host |
+| `SFTP_HOST` / `SFTP_PORT` | empty / `22` | SFTP server for the built-in fetch |
+| `SFTP_USER` / `SFTP_PASS` | empty | SFTP credentials |
+| `SFTP_HOST_KEY` | empty | Pinned host key fingerprint (`SHA256:...`) |
+| `SFTP_KNOWN_HOSTS` | empty | Alternative to `SFTP_HOST_KEY` |
+| `SFTP_REMOTE_DIR` | `/logs` | Remote directory scanned for `access.log*` |
+| `FETCH_SCHEDULE` | empty | Comma separated `HH:MM` local times for automatic fetches |
+| `FETCH_ON_STARTUP` | `false` | Run one fetch when the app starts |
+
+Either `SFTP_HOST_KEY` or `SFTP_KNOWN_HOSTS` is required; the fetch refuses to
+connect without a verified host key.
 
 ## Fetching logs over SFTP
 
-If your logs live on a web host you can reach via SFTP, `scripts/fetch-logs.sh`
-pulls new and changed `access.log*` files and then runs the ingest inside the
-container. It is aimed at hosts that rotate daily shortly after midnight
-(observed 23:58–00:02), so a scheduled run around 01:30 sees a complete day:
-
 ```bash
-scripts/fetch-logs.sh              # fetch + ingest
-scripts/fetch-logs.sh --no-ingest  # fetch only
-scripts/fetch-logs.sh --dry-run    # show what would be downloaded
+python -m app.fetch                # fetch + ingest
+python -m app.fetch --no-ingest    # fetch only
+python -m app.fetch --dry-run      # show what would be downloaded
+python -m app.fetch --force        # download even unchanged files
 ```
 
-Credentials come from `${SFTP_ENV_FILE:-.env}` (`SFTP_HOST`, `SFTP_USER`,
-`SFTP_PASS`) and only ever live in a temporary netrc. The target directory is
-`FETCH_LOG_DIR` (default `./data/logs`) and the remote
-directory is `REMOTE_DIR` (default `/logs`). Two details are handled
-automatically:
-
-- A weekly bundle (`access.log.45.gz`) is skipped once the split daily files
-  (`access.log.45.1.gz`, …) exist locally, since both contain the same lines.
-- A remote `.gz` whose uncompressed name already exists locally is gunzipped
-  into that name. Ingest keys files by basename, so this avoids double import.
+The same is available as the **Fetch** button and `POST /api/fetch[?force=true]`.
+Unchanged files are skipped using a manifest of size and modification time next
+to the database (`.fetch-manifest.tsv`); `--force` ignores it.
 
 ## Ingest behaviour
 
 - Reads `access.log*` plus `.log`, `.gz`, `.txt` files, transparently gunzipped
 - Tracks size and mtime per file; re-running only processes new/changed files
 - Changed files are re-read and their old rows replaced
+- Lines already imported from another file are skipped (see *Deduplication*);
+  repeated identical lines inside one file are kept
 - `python -m app.ingest --rebuild` drops everything and re-imports
 - `python -m app.ingest --no-self` skips the history API lookup
 
@@ -125,6 +159,7 @@ automatically:
 - `GET /api/paths`, `/api/nets` (filters: `week`, `vhost`, `category`, `status_class`, `exclude_self`, `limit`)
 - `GET /api/nets/{net}` with drill-down
 - `POST /api/ingest[?rebuild=true]`
+- `POST /api/fetch[?force=true]`
 
 Interactive docs at `/docs`.
 

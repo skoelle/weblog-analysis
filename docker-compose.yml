@@ -7,9 +7,11 @@ services:
     env_file:
       - .env
     volumes:
+      # Holds the SQLite database and, with LOG_DIR=/app/data/logs, the logs
+      # fetched by the container itself.
       - ./data:/app/data
-      # Host directory that holds the access logs; override LOG_DIR if it is
-      # mounted somewhere else in the container.
-      - ${LOG_HOST_DIR:-./data/logs}:/logs:ro
+      # "Bring your own logs": uncomment to read an existing directory instead
+      # of fetching over SFTP, then set LOG_DIR=/logs in .env.
+      # - ${LOG_HOST_DIR:-./data/logs}:/logs:ro
     ports:
       - "8095:8095"

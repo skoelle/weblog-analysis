@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ARG VERSION=0.1.0
+ARG VERSION=0.2.0
 LABEL org.opencontainers.image.title="weblog-analysis" \
       org.opencontainers.image.description="Analyse von Apache/nginx-Access-Logs mit Vhost-Feld: Wochen, Netze, Bots, Scanner" \
       org.opencontainers.image.source="https://github.com/skoelle/weblog-analysis" \
@@ -9,7 +9,8 @@ LABEL org.opencontainers.image.title="weblog-analysis" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    LOG_DIR=/app/data/logs
 
 WORKDIR /app
 

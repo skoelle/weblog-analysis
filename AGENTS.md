@@ -34,18 +34,18 @@ docker compose up -d --build
 docker compose exec weblog-analysis python -m app.ingest
 ```
 
-Logs per SFTP holen (`SFTP_*` in `.env`, Ziel per `FETCH_LOG_DIR`):
+Logs per SFTP holen (`SFTP_*` in `.env`, Ziel ist `LOG_DIR`):
 
 ```bash
-scripts/fetch-logs.sh              # holen + Ingest im Container
-scripts/fetch-logs.sh --no-ingest  # nur holen
-scripts/fetch-logs.sh --dry-run    # nur anzeigen
+docker compose exec weblog-analysis python -m app.fetch              # holen + Ingest
+docker compose exec weblog-analysis python -m app.fetch --no-ingest  # nur holen
+docker compose exec weblog-analysis python -m app.fetch --dry-run    # nur anzeigen
+docker compose exec weblog-analysis python -m app.fetch --force      # alles neu laden
 ```
 
-Das Skript ist auf Hoster ausgelegt, die taeglich kurz nach Mitternacht rotieren
-(23:58–00:02). Es laesst Wochen-Bundles (`access.log.45.gz`) aus, sobald die
-Tagesdateien der Woche lokal liegen, und entpackt ein Remote-`.gz`, wenn der
-unkomprimierte Name schon existiert (Schutz vor Doppel-Import ueber den Basename).
+Der Fetch laeuft auch automatisch gemaess `FETCH_SCHEDULE` (Default `01:30`;
+die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
+`POST /api/fetch`. Host-Key ist Pflicht: `SFTP_HOST_KEY` oder `SFTP_KNOWN_HOSTS`.
 
 ## Daten Fakten (wichtig)
 
@@ -59,13 +59,21 @@ unkomprimierte Name schon existiert (Schutz vor Doppel-Import ueber den Basename
   damit Tages-/Wochengrenzen dem entsprechen, was der Betreiber erwartet.
 - Datei-Identitaet laeuft ueber den **Basename** (`_file_key`), damit derselbe Logfile unter
   Host-Pfad und Container-Pfad (`/logs`) nicht doppelt importiert wird.
+- **Dedupe laeuft ueber Zeilen-Signaturen, nicht ueber Dateinamen.** Pro Signatur
+  (`ts, ip, vhost_raw, method, path, status, bytes, referer, ua`, BLAKE2b-16) gilt die
+  hoechste Vorkommenszahl einer einzelnen Datei. Ueberlappende Dateien (Wochen-Bundle +
+  Tagesdateien, Teil- + Volldatei) zaehlen dadurch einmal, identische Zeilen **innerhalb**
+  einer Datei bleiben erhalten. `line_counts` haelt die Zahlen, `requests.sig` die Zuordnung.
 
 ## Architektur
 
 - `app/parser.py` – Regex-Parser, Netz-Maskierung, Vhost-Normalisierung (Aliase)
 - `app/classify.py` – Kategorien: browser, search_bot, ai_bot, monitoring, scraper, scanner,
   empty, other. UA-Regeln plus Pfad-Signale (`SCANNER_PATTERNS`).
-- `app/ingest.py` – inkrementeller Import, gz/plain, File-Tracking, Re-Read geaenderter Dateien
+- `app/ingest.py` – inkrementeller Import, gz/plain, File-Tracking, Zeilen-Dedupe
+- `app/fetch.py` – SFTP-Download (paramiko) mit Manifest, Host-Key-Pflicht, atomarem Schreiben
+- `app/scheduler.py` – asyncio-Loop fuer `FETCH_SCHEDULE` (HH:MM, lokale Zeit)
+- `app/db.py` – Schema inkl. Migration auf `requests.sig` und `line_counts`
 - `app/queries.py` – Wochen-/Vhost-/Netz-/Bot-Aggregationen (reines SQL).
   Statusfilter ueber `status_class` (`2xx|3xx|4xx|5xx`) laeuft durch alle
   Aggregationen inkl. `week_overview` und `net_detail`.
@@ -85,3 +93,5 @@ GeoLite2 fuellen; Genauigkeit bleibt netzbasiert (/24 bzw. /48).
   nutzen ausschliesslich Dokumentations-Netze (RFC 5737) und `example.*`-Domains.
 - Keine externen Chart-/JS-CDN-Abhaengigkeiten einfuehren; das Dashboard muss offline laufen.
 - Keine voreiligen Commits oder Pushes ohne ausdrueckliche Aufforderung.
+- `--rebuild` nur bewusst: es loescht auch Zeilen, deren Quelldatei remote nicht mehr
+  existiert (z. B. alte Wochen-Bundles), und die sind danach unwiederbringlich.

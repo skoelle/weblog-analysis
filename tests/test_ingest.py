@@ -165,3 +165,169 @@ def test_status_class_validation(tmp_path: Path, monkeypatch):
         assert response.status_code == 200
         bad = client.get("/api/weeks", params={"status_class": "nope"})
         assert bad.status_code == 422
+
+
+def _write(path: Path, lines: list[str]) -> None:
+    path.write_text("\n".join(lines) + "\n")
+
+
+def _line(ip: str, path: str, status: int = 200) -> str:
+    return LINE_TMPL.format(ip=ip, path=path, status=status, vhost="www.example.org", ua=CHROME)
+
+
+def _count(cfg: Config) -> int:
+    conn = connect(cfg.db_path)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_weekly_bundle_and_daily_files_do_not_double_count(tmp_path: Path):
+    """A bundle and its split daily files contain the same lines."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    day1 = [_line(f"192.0.2.{i}", "/shop/") for i in range(3)]
+    day2 = [_line(f"198.51.100.{i}", "/docs/") for i in range(2)]
+    _write(logs / "access.log.45.1", day1)
+    _write(logs / "access.log.45.2", day2)
+    _write(logs / "access.log.45", day1 + day2)
+
+    cfg = Config(log_dir=str(logs), db_path=str(tmp_path / "db.sqlite"))
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 5
+
+    # Ingest again in a different file order: numbers must stay stable.
+    (logs / "access.log.45").unlink()
+    _write(logs / "access.log.45", day1 + day2)
+    stats = ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 5
+    assert stats["inserted"] == 0
+
+
+def test_partial_file_replaced_by_complete_file(tmp_path: Path):
+    """A truncated download later replaced by the full file must not duplicate."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    full = [_line(f"192.0.2.{i}", "/shop/") for i in range(4)]
+    _write(logs / "access.log.46.6", full[:2])
+
+    cfg = Config(log_dir=str(logs), db_path=str(tmp_path / "db.sqlite"))
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 2
+
+    _write(logs / "access.log.46.6", full)
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 4
+
+
+def test_identical_lines_inside_one_file_are_kept(tmp_path: Path):
+    """Scan traffic can repeat the exact same line; those are distinct requests."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    repeated = _line("192.0.2.0", "/admin", 404)
+    _write(logs / "access.log.1", [repeated] * 5)
+
+    cfg = Config(log_dir=str(logs), db_path=str(tmp_path / "db.sqlite"))
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 5
+
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 5
+
+
+def test_bundle_reread_keeps_daily_rows(tmp_path: Path):
+    """Re-reading the bundle must not delete rows contributed by daily files."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    lines = [_line(f"192.0.2.{i}", "/shop/") for i in range(3)]
+    _write(logs / "access.log.45.1", lines)
+    _write(logs / "access.log.45.2", lines)
+    _write(logs / "access.log.45", lines + lines)
+
+    cfg = Config(log_dir=str(logs), db_path=str(tmp_path / "db.sqlite"))
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 6
+
+    # Force a re-read of the bundle only.
+    conn = connect(cfg.db_path)
+    conn.execute("DELETE FROM ingested_files WHERE path = 'access.log.45'")
+    conn.commit()
+    conn.close()
+
+    ingest(cfg, refresh_self=False)
+    assert _count(cfg) == 6
+
+
+def test_signature_migration_backfills_existing_rows(tmp_path: Path):
+    """A database from before the sig column gets migrated without data loss."""
+    import sqlite3
+
+    from app.db import SIG_FIELDS, init_db, line_signature
+
+    db_path = tmp_path / "old.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE ingested_files (
+            path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL,
+            lines INTEGER NOT NULL, parsed INTEGER NOT NULL, failed INTEGER NOT NULL,
+            ingested_at TEXT NOT NULL
+        );
+        CREATE TABLE requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, day TEXT NOT NULL,
+            iso_week TEXT NOT NULL, ip TEXT NOT NULL, net TEXT NOT NULL,
+            ip_version TEXT NOT NULL, vhost_raw TEXT NOT NULL, vhost TEXT NOT NULL,
+            method TEXT NOT NULL, path TEXT NOT NULL, status INTEGER NOT NULL,
+            bytes INTEGER, referer TEXT NOT NULL, ua TEXT NOT NULL,
+            category TEXT NOT NULL, bot_name TEXT, is_scanner_path INTEGER NOT NULL DEFAULT 0,
+            is_self INTEGER NOT NULL DEFAULT 0, source_file TEXT NOT NULL DEFAULT '',
+            country_code TEXT, region TEXT, city TEXT, asn TEXT
+        );
+        """
+    )
+    row = {
+        "ts": "2026-11-14 00:00:02",
+        "day": "2026-11-14",
+        "iso_week": "2026-W46",
+        "ip": "192.0.2.0",
+        "net": "192.0.2.0",
+        "ip_version": "v4",
+        "vhost_raw": "www.example.org",
+        "vhost": "example.org",
+        "method": "GET",
+        "path": "/shop/",
+        "status": 200,
+        "bytes": 100,
+        "referer": "-",
+        "ua": CHROME,
+        "category": "browser",
+        "bot_name": None,
+        "is_scanner_path": 0,
+        "is_self": 0,
+        "source_file": "access.log.1",
+        "country_code": None,
+        "region": None,
+        "city": None,
+        "asn": None,
+    }
+    columns = ", ".join(row)
+    placeholders = ", ".join("?" * len(row))
+    conn.executemany(
+        f"INSERT INTO requests ({columns}) VALUES ({placeholders})",
+        [tuple(row.values()), tuple(row.values())],
+    )
+    conn.commit()
+    conn.close()
+
+    conn = connect(db_path)
+    init_db(conn)
+    assert conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM requests WHERE sig IS NULL").fetchone()[0] == 0
+    counts = conn.execute("SELECT sig, source_file, n FROM line_counts").fetchall()
+    assert len(counts) == 1
+    assert counts[0]["n"] == 2
+    expected = line_signature(*(row[name] for name in SIG_FIELDS))
+    assert bytes(counts[0]["sig"]) == expected
+    conn.close()
