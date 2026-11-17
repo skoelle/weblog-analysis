@@ -15,3 +15,7 @@ services:
       # - ${LOG_HOST_DIR:-./data/logs}:/logs:ro
     ports:
       - "8095:8095"
+    labels:
+      # Lets Watchtower pick this container up (--label-enable mode) when the
+      # build pushes a new image and calls the deploy webhook.
+      - com.centurylinklabs.watchtower.enable=true

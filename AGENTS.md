@@ -47,6 +47,19 @@ Der Fetch laeuft auch automatisch gemaess `FETCH_SCHEDULE` (Default `01:30`;
 die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
 `POST /api/fetch`. Host-Key ist Pflicht: `SFTP_HOST_KEY` oder `SFTP_KNOWN_HOSTS`.
 
+## CI und Deployment
+
+- `.github/workflows/lint.yml` – `ruff check`, `ruff format --check`, `pytest` (PRs und `main`).
+- `.github/workflows/build.yml` – baut `ghcr.io/skoelle/weblog-analysis` mit Tags
+  `latest` (nur Default-Branch), Semver und `sha`. Laeuft auf `main`-Push und `v*`-Tags.
+- Nach dem Push ruft der **Branch**-Run optional einen Deploy-Webhook (Watchtower HTTP-API).
+  Secrets: `WEBHOOK_URL`, `WEBHOOK_TOKEN`. Der Tag-Run feuert bewusst nicht, weil `latest`
+  dort schon aktuell ist. Fehler nur bei HTTP != 2xx, `summary.failed > 0` oder
+  Nichterreichbarkeit; `summary.updated == 0` ist eine Warnung.
+- `docker-compose.yml` setzt `com.centurylinklabs.watchtower.enable=true`, damit Watchtower
+  den Container im `--label-enable`-Modus aktualisiert.
+- Nie Secrets oder Webhook-URLs ins Repo schreiben; sie gehoeren in die GitHub-Secrets.
+
 ## Daten Fakten (wichtig)
 
 - Log-Format: Apache/nginx combined **plus Vhost als Feld 11**. Parser-Regex deckt praktisch

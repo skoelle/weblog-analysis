@@ -60,6 +60,31 @@ docker run -d --name weblog-analysis \
   ghcr.io/skoelle/weblog-analysis:latest
 ```
 
+### Deployment and updates
+
+The compose service carries the `com.centurylinklabs.watchtower.enable=true`
+label, so a Watchtower running in `--label-enable` mode picks it up.
+
+After a build, the workflow optionally calls a deploy webhook: set the
+repository secrets `WEBHOOK_URL` and `WEBHOOK_TOKEN` (a Watchtower HTTP API
+token, sent as `Authorization: Bearer`). They are repository secrets, **not**
+`.env` entries. Without `WEBHOOK_URL` the step is skipped.
+
+Behaviour of that call:
+
+- Only the `main` build fires it. A `v*` tag build publishes version tags while
+  `:latest` is already current, so calling the webhook there would always
+  report no update.
+- The step fails on a non-2xx reply, on `summary.failed > 0`, or when the
+  webhook is unreachable.
+- `summary.updated == 0` is only a warning: a rebuild with an unchanged digest
+  legitimately updates nothing.
+
+Restarting the container is safe. The ingest commits per file, downloads are
+written to a temporary file and renamed atomically, and the database uses WAL,
+so a restart between files leaves a consistent state. A fetch that was running
+is simply repeated on the next schedule or button press.
+
 ## Where logs come from
 
 `LOG_DIR` is the only input of the tool: a directory containing `access.log*`

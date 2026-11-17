@@ -16,6 +16,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+      WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
 
     steps:
       - name: Checkout
@@ -52,8 +55,37 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Only the branch run publishes :latest, so only it can roll out an
+      # update. A tag push would always report updated=0 because :latest is
+      # already current by then.
+      - name: Notify deploy webhook (Watchtower)
+        if: env.WEBHOOK_URL != '' && github.ref_type == 'branch'
+        run: |
+          set -euo pipefail
+          auth=()
+          if [ -n "${WEBHOOK_TOKEN:-}" ]; then
+            auth=(-H "Authorization: Bearer $WEBHOOK_TOKEN")
+          fi
+          http_code=$(curl -sS -o webhook-response.json -w "%{http_code}" \
+            --connect-timeout 15 --max-time 600 \
+            -X POST "$WEBHOOK_URL" "${auth[@]}")
+          echo "webhook: HTTP $http_code"
+          cat webhook-response.json; echo
+          updated=$(jq -r '.summary.updated // 0' webhook-response.json 2>/dev/null || echo 0)
+          failed=$(jq -r '.summary.failed // 0' webhook-response.json 2>/dev/null || echo 0)
+          echo "updated=$updated failed=$failed"
+          if [ "$http_code" != "200" ] || [ "$failed" -gt 0 ]; then
+            echo "::error::webhook failed (HTTP $http_code, updated=$updated, failed=$failed)"
+            exit 1
+          fi
+          if [ "$updated" -le 0 ]; then
+            echo "::warning::webhook reported no update; the image may already be current"
+          fi
+
   cleanup-old-images:
     needs: build-and-push
+    # Also run when only the webhook step failed, but not on cancellation.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
