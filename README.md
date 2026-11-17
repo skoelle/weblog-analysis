@@ -42,7 +42,10 @@ docker compose exec weblog-analysis python -m app.fetch
 
 `app.fetch` downloads new logs into `LOG_DIR` (`/app/data/logs` by default) and
 then ingests them. Open <http://localhost:8095>; the **Fetch** and **Ingest**
-buttons in the header do the same on demand.
+buttons in the header do the same on demand. Next to the Fetch button the header
+shows when the last fetch ran and whether it succeeded (green dot = ok, red dot
+= failed, grey = no run yet); the tooltip carries the counters and the error
+message if there was one.
 
 With `FETCH_SCHEDULE=01:30` the container fetches on its own once a day, which
 fits hosts that rotate logs shortly after midnight. The clock comes from `TZ`;
@@ -220,6 +223,7 @@ to the database (`.fetch-manifest.tsv`); `--force` ignores it.
 - `GET /api/paths`, `/api/nets` (filters: `week`, `vhost`, `category`, `status_class`, `exclude_self`, `limit`)
 - `GET /api/nets/{net}` with drill-down
 - `POST /api/ingest[?rebuild=true]`
+- `GET /api/fetch/status` (last fetch run, its counters and error if any)
 - `POST /api/fetch[?force=true]`
 
 Interactive docs at `/docs`.

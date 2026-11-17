@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from . import queries
 from .config import config
 from .db import connect, init_db
-from .fetch import fetch_and_ingest
+from .fetch import fetch_and_ingest, read_fetch_status
 from .ingest import ingest
 from .scheduler import scheduler_loop
 
@@ -227,6 +227,11 @@ def referers(
 def trigger_ingest(rebuild: bool = False) -> dict:
     stats = ingest(rebuild_first=rebuild)
     return stats
+
+
+@app.get("/api/fetch/status")
+def fetch_status() -> dict:
+    return {"last": read_fetch_status(config)}
 
 
 @app.post("/api/fetch")

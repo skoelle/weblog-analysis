@@ -379,3 +379,62 @@ def test_retired_files_are_recorded_in_manifest(tmp_path: Path):
     fetch_logs(cfg, client=client)
     manifest = read_manifest(tmp_path / MANIFEST_NAME)
     assert set(manifest) == {"access.log.30.gz", "access.log.47.1"}
+
+
+def test_fetch_and_ingest_records_success_status(tmp_path: Path, monkeypatch):
+    import app.fetch as fetch_module
+    from app.fetch import read_fetch_status
+
+    cfg = make_config(tmp_path)
+    monkeypatch.setattr(
+        fetch_module,
+        "fetch_logs",
+        lambda *a, **kw: {"files": 1, "skipped": 2, "downloaded": 1, "retired": 0},
+    )
+    monkeypatch.setattr(fetch_module, "ingest", lambda *a, **kw: {"inserted": 7, "duplicates": 0})
+    monkeypatch.setattr(fetch_module, "prune_log_files", lambda *a, **kw: {"pruned": 0})
+
+    fetch_and_ingest(cfg)
+
+    last = read_fetch_status(cfg)
+    assert last is not None
+    assert last["ok"] is True
+    assert last["error"] is None
+    assert last["fetch"]["downloaded"] == 1
+    assert last["ingest"]["inserted"] == 7
+    assert last["finished_at"]
+
+
+def test_fetch_and_ingest_records_failure_status(tmp_path: Path, monkeypatch):
+    import app.fetch as fetch_module
+    from app.fetch import read_fetch_status
+
+    cfg = make_config(tmp_path)
+
+    def boom(*a, **kw):
+        raise FetchError("Host-Key-Prüfung nicht konfiguriert")
+
+    monkeypatch.setattr(fetch_module, "fetch_logs", boom)
+
+    with pytest.raises(FetchError):
+        fetch_and_ingest(cfg)
+
+    last = read_fetch_status(cfg)
+    assert last is not None
+    assert last["ok"] is False
+    assert "Host-Key" in last["error"]
+
+
+def test_dry_run_does_not_record_status(tmp_path: Path, monkeypatch):
+    import app.fetch as fetch_module
+    from app.fetch import read_fetch_status
+
+    cfg = make_config(tmp_path)
+    monkeypatch.setattr(
+        fetch_module,
+        "fetch_logs",
+        lambda *a, **kw: {"files": 1, "skipped": 0, "downloaded": 0, "retired": 0},
+    )
+
+    fetch_and_ingest(cfg, dry_run=True)
+    assert read_fetch_status(cfg) is None

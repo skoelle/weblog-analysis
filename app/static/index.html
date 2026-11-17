@@ -5,6 +5,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
 <title>Weblog Analysis</title>
 <style>
   :root {
@@ -86,6 +87,11 @@
   .empty-msg { color: var(--muted); padding: 12px 0; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .fetch-status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: default; }
+  .fetch-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .fetch-status.ok .dot { background: var(--human); }
+  .fetch-status.error .dot { background: var(--scanner); }
+  .fetch-status.error { color: var(--scanner); }
 </style>
 </head>
 <body>
@@ -119,6 +125,7 @@
     <label><input type="checkbox" id="fExcludeSelf" /> Exclude own traffic</label>
     <button id="btnFetch" title="Download new log files over SFTP">Fetch</button>
     <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
+    <span id="fetchStatus" class="fetch-status" title="No fetch run recorded yet"><span class="dot"></span><span class="txt">no fetch yet</span></span>
   </div>
 </header>
 
@@ -454,13 +461,17 @@ $("btnFetch").addEventListener("click", async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Fetching';
   try {
-    const stats = await fetch("/api/fetch", { method: "POST" }).then((r) => r.json());
+    const res = await fetch("/api/fetch", { method: "POST" });
+    if (!res.ok) throw new Error(`fetch -> ${res.status}`);
+    const stats = await res.json();
     const inserted = stats.ingest ? stats.ingest.inserted : 0;
     btn.textContent = `${stats.downloaded} files, ${inserted} new`;
-    await refreshAll();
+    await Promise.all([refreshAll(), loadFetchStatus()]);
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   } catch (e) {
+    console.error(e);
     btn.textContent = "Failed";
+    await loadFetchStatus();
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   }
 });
@@ -484,6 +495,51 @@ $("btnIngest").addEventListener("click", async () => {
 ["fWeek", "fVhost", "fCategory", "fStatus"].forEach((id) => $(id).addEventListener("change", refreshAll));
 $("fExcludeSelf").addEventListener("change", refreshAll);
 
+function fmtWhen(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso || "-";
+  return d.toLocaleString(undefined, {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function renderFetchStatus(last) {
+  const el = $("fetchStatus");
+  const txt = el.querySelector(".txt");
+  if (!last) {
+    el.className = "fetch-status";
+    el.title = "No fetch run recorded yet";
+    txt.textContent = "no fetch yet";
+    return;
+  }
+  const f = last.fetch || {}, ing = last.ingest || {};
+  const when = fmtWhen(last.finished_at);
+  if (last.ok) {
+    el.className = "fetch-status ok";
+    txt.textContent = `last fetch ${when}`;
+    el.title = [
+      `Last fetch OK · ${when}`,
+      `downloaded ${num(f.downloaded || 0)}, skipped ${num(f.skipped || 0)}` +
+        (ing.inserted != null ? `, new rows ${num(ing.inserted)}` : ""),
+      last.force ? "forced download" : "",
+    ].filter(Boolean).join("\n");
+  } else {
+    el.className = "fetch-status error";
+    txt.textContent = `last fetch failed ${when}`;
+    el.title = [`Last fetch FAILED · ${when}`, last.error || "unknown error"].join("\n");
+  }
+}
+
+async function loadFetchStatus() {
+  try {
+    const data = await api("/api/fetch/status");
+    renderFetchStatus(data.last);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 async function init() {
   const f = await api("/api/filters");
   state.weeks = f.weeks; state.vhosts = f.vhosts;
@@ -492,7 +548,7 @@ async function init() {
   state.vhosts.forEach((v) => vhost.insertAdjacentHTML("beforeend", `<option value="${v}">${v}</option>`));
   const latest = state.weeks[state.weeks.length - 1];
   if (latest) week.value = latest;
-  await refreshAll();
+  await Promise.all([refreshAll(), loadFetchStatus()]);
 }
 
 init();

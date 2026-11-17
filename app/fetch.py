@@ -14,19 +14,22 @@ file. Without either the fetch refuses to connect.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
+import sqlite3
 import stat
 import tempfile
 import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Protocol
 
 from .config import Config
 from .config import config as default_config
+from .db import connect
 from .ingest import ingest
 from .retention import cutoff_for, prune_log_files
 
@@ -35,6 +38,7 @@ log = logging.getLogger(__name__)
 MANIFEST_NAME = ".fetch-manifest.tsv"
 REMOTE_PREFIX = "access.log"
 FETCH_LOCK = threading.Lock()
+LAST_FETCH_KEY = "last_fetch"
 
 
 class FetchError(RuntimeError):
@@ -305,6 +309,72 @@ def _same_size(target: Path, size: int) -> bool:
         return False
 
 
+def _record_fetch_status(
+    cfg: Config,
+    *,
+    ok: bool,
+    result: dict[str, int | dict[str, int]],
+    error: str | None,
+    force: bool,
+) -> None:
+    """Persist the outcome of a fetch run in ``meta`` for the dashboard."""
+    fetch_part = {
+        key: val
+        for key, val in result.items()
+        if key in {"files", "skipped", "downloaded", "retired"}
+    }
+    ingest_part = result.get("ingest")
+    payload = {
+        "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "ok": ok,
+        "error": error,
+        "force": force,
+        "fetch": fetch_part,
+        "ingest": ingest_part if isinstance(ingest_part, dict) else {},
+    }
+    conn = connect(cfg.db_path)
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+            (LAST_FETCH_KEY, json.dumps(payload, sort_keys=True)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _record_fetch_status_safely(
+    cfg: Config,
+    *,
+    ok: bool,
+    result: dict[str, int | dict[str, int]],
+    error: str | None,
+    force: bool,
+) -> None:
+    try:
+        _record_fetch_status(cfg, ok=ok, result=result, error=error, force=force)
+    except Exception:
+        log.warning("Fetch-Status konnte nicht gespeichert werden", exc_info=True)
+
+
+def read_fetch_status(cfg: Config | None = None) -> dict | None:
+    """Return the last persisted fetch status, or ``None`` if it never ran."""
+    cfg = cfg or default_config
+    conn = connect(cfg.db_path)
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (LAST_FETCH_KEY,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    with contextlib.suppress(json.JSONDecodeError, TypeError):
+        return json.loads(row["value"])
+    return None
+
+
 def fetch_and_ingest(
     cfg: Config | None = None,
     *,
@@ -313,12 +383,20 @@ def fetch_and_ingest(
     run_ingest: bool = True,
 ) -> dict[str, int | dict[str, int]]:
     cfg = cfg or default_config
-    result: dict[str, int | dict[str, int]] = dict(fetch_logs(cfg, dry_run=dry_run, force=force))
-    if run_ingest and not dry_run:
-        result["ingest"] = ingest(cfg, refresh_self=False)
-        # Prune only after a successful ingest: a file must be in the database
-        # before its raw copy is removed.
-        result["retention"] = prune_log_files(cfg)
+    result: dict[str, int | dict[str, int]] = {}
+    try:
+        result.update(fetch_logs(cfg, dry_run=dry_run, force=force))
+        if run_ingest and not dry_run:
+            result["ingest"] = ingest(cfg, refresh_self=False)
+            # Prune only after a successful ingest: a file must be in the database
+            # before its raw copy is removed.
+            result["retention"] = prune_log_files(cfg)
+    except Exception as exc:
+        if not dry_run:
+            _record_fetch_status_safely(cfg, ok=False, result=result, error=str(exc), force=force)
+        raise
+    if not dry_run:
+        _record_fetch_status_safely(cfg, ok=True, result=result, error=None, force=force)
     return result
 
 
