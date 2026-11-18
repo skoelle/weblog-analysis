@@ -736,13 +736,13 @@ function renderSettings(s) {
     ["WAL size", fmtBytes(d.wal_size)],
   ])));
   cards.push(selfNetworksCard(d));
+  (s.storage || []).forEach((entry) => cards.push(storageCard(entry)));
+  cards.push(lastFetchCard(s.last_fetch));
   const aliasEntries = Object.entries(d.vhost_aliases || {});
   cards.push(settingsCard("Vhost aliases", aliasEntries.length
     ? renderKV(aliasEntries.map(([from, to]) =>
         [`<span class="mono">${escapeHtml(from)}</span>`, `<span class="mono">${escapeHtml(to)}</span>`]))
     : '<p class="settings-note">No extra aliases configured.</p>'));
-  (s.storage || []).forEach((entry) => cards.push(storageCard(entry)));
-  cards.push(lastFetchCard(s.last_fetch));
   $("settingsInfo").innerHTML = cards.join("");
 }
 
