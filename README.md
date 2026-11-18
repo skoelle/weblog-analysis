@@ -26,8 +26,9 @@ resolution gives you. For anonymised input a "visitor" always means **a network
   `VHOST_ALIASES`, e.g. `shop.example.org=example.org`)
 - Top bots by name, top paths, top networks with drill-down
 - Status codes and top referers
-- Your own traffic can be excluded (networks learned from the dyndns-updater
-  history API)
+- Your own traffic can be excluded time-aware: networks and exact IPs come from
+  the dyndns-updater history API, and a network only counts as own while its
+  history interval is active
 - Status filter (all / 2xx / 3xx / 4xx / 5xx) applied everywhere, so the noisy
   404 scan traffic can be hidden with one click
 
@@ -73,9 +74,11 @@ The **Settings** tab also lists the effective runtime configuration (paths,
 host/port, timezone, SFTP target and host-key mode, fetch schedule, retention),
 the ingested data volume (requests, networks, weeks, tracked files, failed
 lines, database/WAL size), the own networks used by the self-traffic exclusion
-(with their source `config`/`history` and the requests flagged as own) and the
-free space of every filesystem behind `LOG_DIR` and the database path. Password
-and host-key values are never exposed.
+(with their source `config`/`history`/`cached`, active time ranges and the
+requests flagged as own), the own-IP history with exact IPs and timestamps, and
+the free space of every filesystem behind `LOG_DIR` and the database path.
+History timestamps are compared as local wall-clock time, matching how the
+access logs are stored. Password and host-key values are never exposed.
 
 With `FETCH_SCHEDULE=01:30` the container fetches on its own once a day, which
 fits hosts that rotate logs shortly after midnight. The clock comes from `TZ`;
@@ -205,7 +208,7 @@ All settings come from environment variables (see `.env.example`):
 |---|---|---|
 | `LOG_DIR` | `/app/data/logs` | Directory with `access.log*` files; the only input of the tool |
 | `DB_PATH` | `/app/data/weblog.sqlite` | SQLite database file |
-| `HISTORY_URL` | empty | dyndns-updater history endpoint for own-IP detection |
+| `HISTORY_URL` | empty | dyndns-updater history endpoint for time-aware own-IP detection |
 | `SELF_NETWORKS` | empty | Extra own networks, comma separated |
 | `HOST` / `PORT` | `0.0.0.0` / `8095` | Web server bind |
 | `TZ` | container default (UTC) | Timezone for `FETCH_SCHEDULE`, e.g. `Europe/Berlin` |

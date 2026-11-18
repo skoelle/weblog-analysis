@@ -22,6 +22,7 @@ from .config import Config
 from .config import config as default_config
 from .db import connect
 from .fetch import read_fetch_status
+from .selfip import build_intervals, legacy_networks, load_history
 
 LOW_FREE_BYTES = 1024**3
 LOW_FREE_PERCENT = 10.0
@@ -172,18 +173,46 @@ def _history_host(history_url: str) -> str | None:
         return None
 
 
-def _self_network_list(conn: sqlite3.Connection, cfg: Config) -> list[dict[str, Any]]:
+def _add_source(sources: dict[str, list[str]], net: str, source: str) -> None:
+    values = sources.setdefault(net, [])
+    if source not in values:
+        values.append(source)
+
+
+def _self_info(
+    conn: sqlite3.Connection, cfg: Config
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     config_nets = set(cfg.self_networks)
-    history_nets = {row["net"] for row in conn.execute("SELECT net FROM self_networks")}
-    networks = []
-    for net in sorted(config_nets | history_nets):
-        sources = []
-        if net in config_nets:
-            sources.append("config")
-        if net in history_nets:
-            sources.append("history")
-        networks.append({"net": net, "sources": sources})
-    return networks
+    entries = load_history(conn)
+    intervals = build_intervals(entries)
+    legacy = legacy_networks(conn) if not intervals else set()
+
+    sources: dict[str, list[str]] = {}
+    ranges: dict[str, list[dict[str, Any]]] = {}
+    for interval in intervals:
+        ranges.setdefault(interval.net, []).append({"start": interval.start, "end": interval.end})
+    for net in sorted(config_nets):
+        _add_source(sources, net, "config")
+    for net in sorted(ranges):
+        _add_source(sources, net, "history")
+    for net in sorted(legacy):
+        _add_source(sources, net, "cached")
+
+    networks = [
+        {"net": net, "sources": values, "ranges": ranges.get(net, [])}
+        for net, values in sorted(sources.items())
+    ]
+    history = [
+        {
+            "ts": entry.ts,
+            "ip": entry.ip,
+            "net": entry.net,
+            "trigger": entry.trigger,
+            "current": index == len(entries) - 1,
+        }
+        for index, entry in enumerate(entries)
+    ]
+    return networks, history
 
 
 def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, Any]:
@@ -203,7 +232,7 @@ def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, 
     self_stats = conn.execute(
         "SELECT COUNT(*) AS hits, COUNT(DISTINCT net) AS nets FROM requests WHERE is_self = 1"
     ).fetchone()
-    self_networks = _self_network_list(conn, cfg)
+    self_networks, self_history = _self_info(conn, cfg)
     db_path = Path(cfg.db_path)
     return {
         **summary,
@@ -217,6 +246,7 @@ def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, 
         "wal_size": _file_size(Path(f"{db_path}-wal")),
         "self_network_list": self_networks,
         "self_network_count": len(self_networks),
+        "self_history": self_history,
         "history_configured": bool(cfg.history_url),
         "history_host": _history_host(cfg.history_url),
         "self_hits": self_stats["hits"],

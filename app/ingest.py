@@ -26,7 +26,14 @@ from .config import Config
 from .config import config as default_config
 from .db import SIG_FIELDS, connect, init_db, iter_signature_chunks, line_signature
 from .parser import ParsedLine, ParseError, parse_line
-from .selfip import fetch_self_networks
+from .selfip import (
+    SelfMatcher,
+    build_intervals,
+    fetch_self_history,
+    legacy_networks,
+    load_history,
+    store_history,
+)
 
 log = logging.getLogger(__name__)
 
@@ -97,9 +104,9 @@ def _is_unchanged(conn: sqlite3.Connection, path: Path) -> bool:
     return row["size"] == stat.st_size and abs(row["mtime"] - stat.st_mtime) < 1.0
 
 
-def _row_tuple(item: ParsedLine, self_networks: set[str], source_file: str) -> tuple:
+def _row_tuple(item: ParsedLine, matcher: SelfMatcher, source_file: str) -> tuple:
     cls = classify.classify(item.ua, item.path)
-    is_self = 1 if item.net in self_networks else 0
+    is_self = 1 if matcher(item.net, item.ts) else 0
     sig = line_signature(*(getattr(item, name) for name in SIG_FIELDS))
     return (
         item.ts,
@@ -171,7 +178,7 @@ def _trim_signature(conn: sqlite3.Connection, sig: bytes, excess: int) -> None:
 def _ingest_file(
     conn: sqlite3.Connection,
     path: Path,
-    self_networks: set[str],
+    matcher: SelfMatcher,
     aliases: dict[str, str] | None,
 ) -> tuple[int, int, int]:
     """Ingest one file, adding only lines no other file has more often.
@@ -180,7 +187,7 @@ def _ingest_file(
     """
     parsed, failed = parse_file(path, aliases)
     key = _file_key(path)
-    rows = [_row_tuple(item, self_networks, key) for item in parsed]
+    rows = [_row_tuple(item, matcher, key) for item in parsed]
 
     # Rows of this file are dropped first: the signature counts of the other
     # files stay authoritative, this file contributes on top of them.
@@ -259,6 +266,27 @@ def rebuild(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _backfill_self(conn: sqlite3.Connection, matcher: SelfMatcher) -> int:
+    """Flag already imported rows that now match the own-traffic history."""
+    networks = sorted(matcher.known_nets)
+    if not networks:
+        return 0
+    updated = 0
+    for start in range(0, len(networks), 500):
+        chunk = networks[start : start + 500]
+        placeholders = ",".join("?" * len(chunk))
+        rows = conn.execute(
+            f"SELECT id, ts, net FROM requests WHERE is_self = 0 AND net IN ({placeholders})",
+            chunk,
+        ).fetchall()
+        payload = [(row["id"],) for row in rows if matcher(row["net"], row["ts"])]
+        if payload:
+            conn.executemany("UPDATE requests SET is_self = 1 WHERE id = ?", payload)
+            conn.commit()
+            updated += len(payload)
+    return updated
+
+
 def ingest(
     cfg: Config | None = None,
     *,
@@ -272,16 +300,16 @@ def ingest(
     if rebuild_first:
         rebuild(conn)
 
-    self_networks = set(cfg.self_networks)
-    if refresh_self:
-        fetched = fetch_self_networks(cfg.history_url)
+    if refresh_self and cfg.history_url:
+        fetched = fetch_self_history(cfg.history_url)
         if fetched:
-            self_networks |= fetched
-            conn.executemany(
-                "INSERT OR IGNORE INTO self_networks(net) VALUES(?)",
-                [(net,) for net in sorted(fetched)],
-            )
+            store_history(conn, fetched)
             conn.commit()
+
+    history = load_history(conn)
+    intervals = build_intervals(history)
+    fallback = legacy_networks(conn) if not intervals else set()
+    matcher = SelfMatcher(cfg.self_networks, intervals, fallback)
 
     stats = {
         "files": 0,
@@ -290,14 +318,18 @@ def ingest(
         "inserted": 0,
         "duplicates": 0,
         "failed": 0,
+        "self_backfilled": 0,
         "seconds": 0,
     }
+    stats["self_backfilled"] = _backfill_self(conn, matcher)
+    if stats["self_backfilled"]:
+        log.info("%d bereits importierte Requests als eigene markiert", stats["self_backfilled"])
     started = time.monotonic()
     for path in iter_log_files(cfg.log_dir):
         if _is_unchanged(conn, path):
             stats["skipped"] += 1
             continue
-        inserted, failed, duplicates = _ingest_file(conn, path, self_networks, cfg.vhost_aliases)
+        inserted, failed, duplicates = _ingest_file(conn, path, matcher, cfg.vhost_aliases)
         conn.commit()
         stats["files"] += 1
         stats["parsed"] += inserted + duplicates
@@ -339,7 +371,8 @@ def main() -> None:
     print(
         f"files={stats['files']} skipped={stats['skipped']} "
         f"inserted={stats['inserted']} duplicates={stats['duplicates']} "
-        f"failed={stats['failed']} seconds={stats['seconds']}"
+        f"failed={stats['failed']} self_backfilled={stats['self_backfilled']} "
+        f"seconds={stats['seconds']}"
     )
 
 

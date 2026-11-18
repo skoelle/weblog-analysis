@@ -387,7 +387,7 @@ def fetch_and_ingest(
     try:
         result.update(fetch_logs(cfg, dry_run=dry_run, force=force))
         if run_ingest and not dry_run:
-            result["ingest"] = ingest(cfg, refresh_self=False)
+            result["ingest"] = ingest(cfg, refresh_self=True)
             # Prune only after a successful ingest: a file must be in the database
             # before its raw copy is removed.
             result["retention"] = prune_log_files(cfg)

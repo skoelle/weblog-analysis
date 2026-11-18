@@ -85,6 +85,10 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
   Diese Einschraenkung im UI und in Antworten offen benennen, nicht als echte User-IP verkaufen.
 - Zeitstempel werden als **lokale Wanduhrzeit** gespeichert (TZ-Offset wird nicht angewendet),
   damit Tages-/Wochengrenzen dem entsprechen, was der Betreiber erwartet.
+- Eigene Netze (`is_self`) sind **zeitbewusst**: `self_ip_history` haelt die History-Eintraege
+  (inkl. exakter eigener IPs aus der API) mit lokaler Wanduhrzeit, `SELF_NETWORKS` gilt immer.
+  Der Backfill setzt beim Ingest nur neue Treffer (`is_self=1`) und entfernt nie Flags; kein
+  `--rebuild` noetig. Die Log-Zeilen selbst bleiben auf /24 bzw. /48 anonymisiert.
 - Datei-Identitaet laeuft ueber den **Basename** (`_file_key`), damit derselbe Logfile unter
   Host-Pfad und Container-Pfad (`/logs`) nicht doppelt importiert wird.
 - **Dedupe laeuft ueber Zeilen-Signaturen, nicht ueber Dateinamen.** Pro Signatur
@@ -105,7 +109,8 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
 - `app/parser.py` – Regex-Parser, Netz-Maskierung, Vhost-Normalisierung (Aliase)
 - `app/classify.py` – Kategorien: browser, search_bot, ai_bot, monitoring, scraper, scanner,
   empty, other. UA-Regeln plus Pfad-Signale (`SCANNER_PATTERNS`).
-- `app/ingest.py` – inkrementeller Import, gz/plain, File-Tracking, Zeilen-Dedupe
+- `app/ingest.py` – inkrementeller Import, gz/plain, File-Tracking, Zeilen-Dedupe,
+  zeitbewusster Own-Traffic-Backfill
 - `app/fetch.py` – SFTP-Download (paramiko) mit Manifest, Host-Key-Pflicht, atomarem Schreiben
 - `app/scheduler.py` – asyncio-Loop fuer `FETCH_SCHEDULE` (HH:MM, lokale Zeit)
 - `app/db.py` – Schema inkl. Migration auf `requests.sig`, `line_counts`, `ingested_files.max_day`
@@ -117,7 +122,8 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
   Aggregationen inkl. `week_overview` und `net_detail`.
 - `app/main.py` – FastAPI-Routen + statisches Dashboard
 - `app/static/index.html` – Vanilla-JS-Dashboard, inline SVG-Charts, keine externen CDNs
-- `app/selfip.py` – eigene Netze aus der dyndns-updater `/history`-API
+- `app/selfip.py` – eigene IP-Historie (Zeit + Netz) aus der dyndns-updater
+  `/history`-API, Intervall-Matcher
 
 ## Geo (vorbereitet, nicht aktiv)
 

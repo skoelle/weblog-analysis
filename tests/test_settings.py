@@ -85,8 +85,11 @@ def test_settings_lists_own_networks_with_sources(tmp_path: Path, monkeypatch):
     conn = connect(db_path)
     init_db(conn)
     conn.executemany(
-        "INSERT OR IGNORE INTO self_networks(net) VALUES(?)",
-        [("203.0.113.0",), ("198.51.100.0",)],
+        "INSERT INTO self_ip_history(ts, ip, net, trigger) VALUES(?, ?, ?, ?)",
+        [
+            ("2026-10-01 00:00:00", "198.51.100.7", "198.51.100.0", "webhook"),
+            ("2026-11-01 00:00:00", "203.0.113.9", "203.0.113.0", "poll"),
+        ],
     )
     conn.commit()
     conn.close()
@@ -97,11 +100,35 @@ def test_settings_lists_own_networks_with_sources(tmp_path: Path, monkeypatch):
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["self_network_list"] == [
-        {"net": "192.0.2.0", "sources": ["config"]},
-        {"net": "198.51.100.0", "sources": ["history"]},
-        {"net": "203.0.113.0", "sources": ["config", "history"]},
+        {"net": "192.0.2.0", "sources": ["config"], "ranges": []},
+        {
+            "net": "198.51.100.0",
+            "sources": ["history"],
+            "ranges": [{"start": "2026-10-01 00:00:00", "end": "2026-11-01 00:00:00"}],
+        },
+        {
+            "net": "203.0.113.0",
+            "sources": ["config", "history"],
+            "ranges": [{"start": "2026-11-01 00:00:00", "end": None}],
+        },
     ]
     assert data["self_network_count"] == 3
+    assert data["self_history"] == [
+        {
+            "ts": "2026-10-01 00:00:00",
+            "ip": "198.51.100.7",
+            "net": "198.51.100.0",
+            "trigger": "webhook",
+            "current": False,
+        },
+        {
+            "ts": "2026-11-01 00:00:00",
+            "ip": "203.0.113.9",
+            "net": "203.0.113.0",
+            "trigger": "poll",
+            "current": True,
+        },
+    ]
     assert data["history_configured"] is True
     assert data["history_host"] == "dyndns.example.org"
     assert data["self_hits"] == 0
@@ -128,3 +155,30 @@ def test_legacy_self_net_meta_is_migrated(tmp_path: Path):
     conn.close()
 
     assert networks == {"198.51.100.0"}
+
+
+def test_cached_legacy_networks_are_shown_without_history(tmp_path: Path):
+    from app.config import Config
+    from app.db import connect, init_db
+    from app.info import settings_info
+
+    db_path = tmp_path / "cached.sqlite"
+    conn = connect(db_path)
+    init_db(conn)
+    conn.execute("INSERT INTO self_networks(net) VALUES('198.51.100.0')")
+    conn.commit()
+    conn.close()
+
+    cfg = Config(
+        log_dir=str(tmp_path / "logs"),
+        db_path=str(db_path),
+        history_url="",
+        self_networks=[],
+    )
+
+    data = settings_info(cfg)["data"]
+
+    assert data["self_network_list"] == [
+        {"net": "198.51.100.0", "sources": ["cached"], "ranges": []}
+    ]
+    assert data["self_history"] == []

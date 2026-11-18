@@ -108,7 +108,10 @@
     padding: 10px 12px;
   }
   .settings-card h3 { margin: 0 0 6px; font-size: 14px; }
+  .settings-card h4 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
   .settings-card p { margin: 0 0 12px; color: var(--muted); }
+  .settings-card.wide { grid-column: 1 / -1; }
+  tbody tr.self-current td { background: #123a2c; }
   .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
   .kv dt { color: var(--muted); }
@@ -119,6 +122,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; max-height: 160px; overflow: auto; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); font-size: 12px; }
   .chip .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+  .chip .when { color: var(--muted); font-size: 10px; }
 </style>
 </head>
 <body>
@@ -659,8 +663,8 @@ function renderKV(rows) {
     `<dt>${k}</dt><dd>${v == null ? "n/a" : v}</dd>`).join("")}</dl>`;
 }
 
-function settingsCard(title, body) {
-  return `<div class="panel settings-card"><h3>${title}</h3>${body}</div>`;
+function settingsCard(title, body, wide) {
+  return `<div class="panel settings-card${wide ? " wide" : ""}"><h3>${title}</h3>${body}</div>`;
 }
 
 function storageCard(entry) {
@@ -699,21 +703,38 @@ function lastFetchCard(last) {
 
 function selfNetworksCard(d) {
   const networks = d.self_network_list || [];
+  const entries = d.self_history || [];
+  const current = entries.length ? entries[entries.length - 1] : null;
   const chips = networks.length
-    ? `<div class="chips">${networks.map((entry) =>
-        `<span class="chip"><span class="mono">${escapeHtml(entry.net)}</span>${(entry.sources || [])
-          .map((src) => `<span class="tag">${escapeHtml(src)}</span>`).join("")}</span>`).join("")}</div>`
+    ? `<div class="chips">${networks.map((entry) => {
+        const ranges = (entry.ranges || []).map((r) =>
+          `${r.start} → ${r.end || "now"}`).join(", ");
+        const sources = (entry.sources || [])
+          .map((src) => `<span class="tag">${escapeHtml(src)}</span>`).join("");
+        return `<span class="chip" title="${escapeHtml(ranges)}"><span class="mono">${escapeHtml(entry.net)}</span>${sources}${ranges ? `<span class="when">${escapeHtml(ranges)}</span>` : ""}</span>`;
+      }).join("")}</div>`
     : '<p class="settings-note">No own networks detected. Set <span class="mono">SELF_NETWORKS</span> or <span class="mono">HISTORY_URL</span>.</p>';
-  const history = d.history_configured
+  const historyStatus = d.history_configured
     ? `enabled${d.history_host ? ` (${escapeHtml(d.history_host)})` : ""}`
     : "disabled";
-  return settingsCard("Own networks (excluded)", `${chips}
-    ${renderKV([
-      ["History lookup", history],
+  const timeline = entries.length
+    ? `<div class="scroll">${table(entries, [
+        { label: "Changed", render: (r) => `<span class="mono">${r.ts}</span>` },
+        { label: "IP", render: (r) => `<span class="mono">${escapeHtml(r.ip)}</span>` },
+        { label: "Network", render: (r) => `<span class="mono">${escapeHtml(r.net)}</span>` },
+        { label: "Trigger", render: (r) => r.trigger ? `<span class="tag">${escapeHtml(r.trigger)}</span>` : "-" },
+        { label: "", render: (r) => r.current ? '<span class="tag">current</span>' : "" },
+      ], { rowClass: (r) => r.current ? "self-current" : "" })}</div>`
+    : '<p class="settings-note">No history entries stored yet. Run an ingest with <span class="mono">HISTORY_URL</span> configured.</p>';
+  return settingsCard("Own IP history (excluded)", `${renderKV([
+      ["History lookup", historyStatus],
+      ["Current", current ? `<span class="mono">${escapeHtml(current.ip)}</span> · <span class="mono">${escapeHtml(current.net)}</span>` : "n/a"],
       ["Requests flagged own", num(d.self_hits)],
       ["Networks observed", num(d.self_nets_observed)],
     ])}
-    <p class="settings-note">The own flag is set during ingest; newly detected networks only affect future imports.</p>`);
+    <h4>Networks</h4>${chips}
+    <h4>IP changes</h4>${timeline}
+    <p class="settings-note">Exclusion is time-aware: a network counts as own only while its history interval is active. Existing flags are only added, never removed. IPs come from the dyndns history; the access logs themselves stay anonymised to /24 or /48.</p>`, true);
 }
 
 function renderSettings(s) {

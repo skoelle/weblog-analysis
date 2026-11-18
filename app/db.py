@@ -22,6 +22,13 @@ CREATE TABLE IF NOT EXISTS self_networks (
     net TEXT PRIMARY KEY
 );
 
+CREATE TABLE IF NOT EXISTS self_ip_history (
+    ts      TEXT PRIMARY KEY,
+    ip      TEXT NOT NULL,
+    net     TEXT NOT NULL,
+    trigger TEXT
+);
+
 CREATE TABLE IF NOT EXISTS ingested_files (
     path        TEXT PRIMARY KEY,
     size        INTEGER NOT NULL,

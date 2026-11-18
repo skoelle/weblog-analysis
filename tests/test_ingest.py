@@ -6,6 +6,7 @@ from app import queries
 from app.config import Config
 from app.db import connect, init_db
 from app.ingest import ingest
+from app.selfip import HistoryEntry
 
 LINE_TMPL = (
     '{ip} - - [14/Nov/2026:00:00:02 +0100] "GET {path} HTTP/1.1" {status} 100 '
@@ -423,19 +424,104 @@ def test_untracked_max_day_row_is_dropped_for_reread(tmp_path: Path):
     conn.close()
 
 
-def test_all_history_networks_are_stored(tmp_path: Path, monkeypatch):
+def _line_at(ip: str, when: str, path: str = "/") -> str:
+    return f'{ip} - - [{when}] "GET {path} HTTP/1.1" 200 100 www.example.org "-" "{CHROME}" "-"'
+
+
+def test_history_entries_are_stored_with_timestamps(tmp_path: Path, monkeypatch):
     cfg = make_config(tmp_path)
     cfg.history_url = "https://history.example.org/api"
-    monkeypatch.setattr(
-        "app.ingest.fetch_self_networks",
-        lambda url, timeout=10.0: {"192.0.2.0", "203.0.113.0"},
-    )
+    entries = [
+        HistoryEntry("2026-11-01 00:00:00", "192.0.2.7", "192.0.2.0", "webhook"),
+        HistoryEntry("2026-11-10 00:00:00", "203.0.113.9", "203.0.113.0", "webhook"),
+    ]
+    monkeypatch.setattr("app.ingest.fetch_self_history", lambda url, timeout=10.0: entries)
 
     ingest(cfg)
 
     conn = connect(cfg.db_path)
     try:
-        networks = {row["net"] for row in conn.execute("SELECT net FROM self_networks")}
+        rows = [
+            dict(row)
+            for row in conn.execute("SELECT ts, ip, net, trigger FROM self_ip_history ORDER BY ts")
+        ]
     finally:
         conn.close()
-    assert networks == {"192.0.2.0", "203.0.113.0"}
+    assert rows == [
+        {"ts": "2026-11-01 00:00:00", "ip": "192.0.2.7", "net": "192.0.2.0", "trigger": "webhook"},
+        {
+            "ts": "2026-11-10 00:00:00",
+            "ip": "203.0.113.9",
+            "net": "203.0.113.0",
+            "trigger": "webhook",
+        },
+    ]
+
+
+def test_own_traffic_is_time_aware(tmp_path: Path, monkeypatch):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    lines = [
+        _line_at("192.0.2.5", "05/Nov/2026:12:00:00 +0100"),
+        _line_at("192.0.2.5", "15/Nov/2026:12:00:00 +0100"),
+        _line_at("203.0.113.5", "15/Nov/2026:12:00:00 +0100"),
+    ]
+    (logs / "access.log.1").write_text("\n".join(lines) + "\n")
+    cfg = Config(
+        log_dir=str(logs),
+        db_path=str(tmp_path / "db.sqlite"),
+        history_url="https://history.example.org/api",
+        vhost_aliases={},
+        self_networks=[],
+    )
+    entries = [
+        HistoryEntry("2026-11-01 00:00:00", "192.0.2.7", "192.0.2.0", "webhook"),
+        HistoryEntry("2026-11-10 00:00:00", "203.0.113.9", "203.0.113.0", "webhook"),
+    ]
+    monkeypatch.setattr("app.ingest.fetch_self_history", lambda url, timeout=10.0: entries)
+
+    ingest(cfg)
+
+    conn = connect(cfg.db_path)
+    try:
+        flags = {
+            (row["ip"], row["ts"]): row["is_self"]
+            for row in conn.execute("SELECT ip, ts, is_self FROM requests")
+        }
+    finally:
+        conn.close()
+    assert flags[("192.0.2.5", "2026-11-05 12:00:00")] == 1
+    assert flags[("192.0.2.5", "2026-11-15 12:00:00")] == 0
+    assert flags[("203.0.113.5", "2026-11-15 12:00:00")] == 1
+
+
+def test_backfill_marks_existing_rows(tmp_path: Path):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "access.log.1").write_text(_line_at("192.0.2.5", "05/Nov/2026:12:00:00 +0100") + "\n")
+    cfg = Config(
+        log_dir=str(logs),
+        db_path=str(tmp_path / "db.sqlite"),
+        history_url="",
+        vhost_aliases={},
+        self_networks=[],
+    )
+    ingest(cfg, refresh_self=False)
+
+    conn = connect(cfg.db_path)
+    conn.execute(
+        "INSERT INTO self_ip_history(ts, ip, net, trigger) VALUES (?, ?, ?, ?)",
+        ("2026-11-01 00:00:00", "192.0.2.7", "192.0.2.0", "webhook"),
+    )
+    conn.commit()
+    conn.close()
+
+    stats = ingest(cfg, refresh_self=False)
+
+    assert stats["self_backfilled"] == 1
+    conn = connect(cfg.db_path)
+    try:
+        flag = conn.execute("SELECT is_self FROM requests").fetchone()[0]
+    finally:
+        conn.close()
+    assert flag == 1
