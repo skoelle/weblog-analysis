@@ -57,8 +57,10 @@
   section { margin-bottom: 28px; }
   section h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: var(--text); }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 1000px) { .grid-2 { grid-template-columns: 1fr; } }
+  .cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cards-grid > section { margin-bottom: 0; }
+  .cards-grid > section.full { grid-column: 1 / -1; }
+  @media (max-width: 1000px) { .cards-grid { grid-template-columns: 1fr; } }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; position: sticky; top: 0; background: var(--panel); }
@@ -165,53 +167,52 @@
   <div id="viewPanels">
     <div class="cards" id="cards"></div>
 
-    <section id="sectionWeeks">
-      <h2>Weekly visitors and traffic</h2>
-      <div class="panel">
-        <div id="chartWeeks"></div>
-        <div class="legend">
-          <span><i style="background:var(--human)"></i>Human hits</span>
-          <span><i style="background:var(--bot)"></i>Bot hits</span>
-          <span><i style="background:var(--scanner)"></i>Scanners</span>
-          <span><i style="background:var(--other)"></i>Other / no UA</span>
-          <span><i style="background:var(--accent)"></i>Unique networks (line)</span>
+    <div class="cards-grid" id="cardsGrid">
+      <section id="sectionWeeks" class="full">
+        <h2>Weekly visitors and traffic</h2>
+        <div class="panel">
+          <div id="chartWeeks"></div>
+          <div class="legend">
+            <span><i style="background:var(--human)"></i>Human hits</span>
+            <span><i style="background:var(--bot)"></i>Bot hits</span>
+            <span><i style="background:var(--scanner)"></i>Scanners</span>
+            <span><i style="background:var(--other)"></i>Other / no UA</span>
+            <span><i style="background:var(--accent)"></i>Unique networks (line)</span>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <div class="grid-2">
-      <section>
+      <section id="sectionCategories">
         <h2>Categories</h2>
         <div class="panel"><div id="tblCategories"></div></div>
       </section>
-      <section>
+
+      <section id="sectionVhosts">
         <h2>Vhosts</h2>
         <div class="panel scroll"><div id="tblVhosts"></div></div>
       </section>
-    </div>
 
-    <div class="grid-2">
-      <section>
+      <section id="sectionBots">
         <h2>Bots and crawlers</h2>
         <div class="panel scroll"><div id="tblBots"></div></div>
       </section>
-      <section>
+
+      <section id="sectionPaths">
         <h2>Top paths</h2>
         <div class="panel scroll"><div id="tblPaths"></div></div>
       </section>
-    </div>
 
-    <section>
-      <h2>Top networks / visitors <span class="tag">(click a row for details)</span></h2>
-      <div class="panel scroll"><div id="tblNets"></div></div>
-    </section>
+      <section id="sectionNets">
+        <h2>Top networks / visitors <span class="tag">(click a row for details)</span></h2>
+        <div class="panel scroll"><div id="tblNets"></div></div>
+      </section>
 
-    <div class="grid-2">
-      <section>
+      <section id="sectionStatus">
         <h2>Status codes</h2>
         <div class="panel"><div id="tblStatus"></div></div>
       </section>
-      <section>
+
+      <section id="sectionReferers">
         <h2>Top referers</h2>
         <div class="panel scroll"><div id="tblReferers"></div></div>
       </section>
@@ -221,7 +222,7 @@
   <div id="viewSettings" hidden>
     <section>
       <h2>Data</h2>
-      <div class="grid-2">
+      <div class="cards-grid">
         <div class="panel settings-card">
           <h3>Fetch</h3>
           <p>Download new log files from the SFTP server into <span class="mono">LOG_DIR</span>, then import them.</p>
@@ -475,12 +476,22 @@ function escapeHtml(s) {
   }[c]));
 }
 
+function applyFilterVisibility() {
+  const on = isAnalyse();
+  const cat = $("fCategory").value;
+  $("sectionVhosts").hidden = on && !!$("fVhost").value;
+  $("sectionCategories").hidden = on && !!cat;
+  $("sectionBots").hidden = on && ["browser", "empty"].includes(cat);
+}
+
 async function refreshAll() {
+  applyFilterVisibility();
+  const jobs = [loadOverview(), loadPaths(), loadNets(), loadStatus(), loadReferers()];
+  if (!$("sectionCategories").hidden) jobs.push(loadCategories());
+  if (!$("sectionVhosts").hidden) jobs.push(loadVhosts());
+  if (!$("sectionBots").hidden) jobs.push(loadBots());
   try {
-    await Promise.all([
-      loadOverview(), loadCategories(), loadVhosts(), loadBots(),
-      loadPaths(), loadNets(), loadStatus(), loadReferers(),
-    ]);
+    await Promise.all(jobs);
   } catch (e) {
     console.error(e);
   }
@@ -495,10 +506,9 @@ function showTab(name) {
   $("viewSettings").hidden = name !== "settings";
   const weeks = $("sectionWeeks");
   if (name === "analyse") {
-    $("viewPanels").appendChild(weeks);
+    $("cardsGrid").append(weeks);
   } else {
-    const anchor = $("viewPanels").querySelector(".grid-2");
-    $("viewPanels").insertBefore(weeks, anchor);
+    $("cardsGrid").prepend(weeks);
   }
   if (name === "settings") loadSettings();
   else refreshAll();

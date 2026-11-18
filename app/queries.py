@@ -256,11 +256,12 @@ def bot_breakdown(
     *,
     iso_week: str | None = None,
     vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: str | None = None,
     limit: int = 25,
 ) -> list[dict[str, Any]]:
-    where, params = _filters(iso_week, vhost, None, exclude_self, status_class)
+    where, params = _filters(iso_week, vhost, category, exclude_self, status_class)
     sql = f"""
     SELECT COALESCE(bot_name, category) AS name,
            category,
@@ -304,10 +305,11 @@ def status_breakdown(
     *,
     iso_week: str | None = None,
     vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: str | None = None,
 ) -> list[dict[str, Any]]:
-    where, params = _filters(iso_week, vhost, None, exclude_self, status_class)
+    where, params = _filters(iso_week, vhost, category, exclude_self, status_class)
     sql = f"""
     SELECT status, COUNT(*) AS hits
     FROM requests
@@ -324,11 +326,12 @@ def referer_breakdown(
     *,
     iso_week: str | None = None,
     vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: str | None = None,
     limit: int = 25,
 ) -> list[dict[str, Any]]:
-    where, params = _filters(iso_week, vhost, None, exclude_self, status_class)
+    where, params = _filters(iso_week, vhost, category, exclude_self, status_class)
     sql = f"""
     SELECT referer, COUNT(*) AS hits
     FROM requests

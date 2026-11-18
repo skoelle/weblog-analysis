@@ -134,6 +134,7 @@ def categories(
 def bots(
     week: str | None = None,
     vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: StatusClass | None = None,
     limit: int = Query(25, ge=1, le=200),
@@ -142,6 +143,7 @@ def bots(
         queries.bot_breakdown,
         iso_week=week,
         vhost=vhost,
+        category=category,
         exclude_self=exclude_self,
         status_class=status_class,
         limit=limit,
@@ -205,6 +207,7 @@ def net_detail(
 def status(
     week: str | None = None,
     vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: StatusClass | None = None,
 ) -> list[dict]:
@@ -212,6 +215,7 @@ def status(
         queries.status_breakdown,
         iso_week=week,
         vhost=vhost,
+        category=category,
         exclude_self=exclude_self,
         status_class=status_class,
     )
@@ -221,6 +225,7 @@ def status(
 def referers(
     week: str | None = None,
     vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: StatusClass | None = None,
     limit: int = Query(25, ge=1, le=200),
@@ -229,6 +234,7 @@ def referers(
         queries.referer_breakdown,
         iso_week=week,
         vhost=vhost,
+        category=category,
         exclude_self=exclude_self,
         status_class=status_class,
         limit=limit,

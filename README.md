@@ -249,7 +249,9 @@ to the database (`.fetch-manifest.tsv`); `--force` ignores it.
 
 - `GET /api/health`, `/api/filters`
 - `GET /api/weeks[?vhost=…&category=…&status_class=…&exclude_self=true]` (no `week`: the chart always spans all weeks)
-- `GET /api/vhosts`, `/api/categories`, `/api/bots`, `/api/status`, `/api/referers`
+- `GET /api/vhosts`, `/api/categories` (filters: `week`, `vhost`, `status_class`, `exclude_self`)
+- `GET /api/bots`, `/api/status`, `/api/referers` (filters: `week`, `vhost`, `category`,
+  `status_class`, `exclude_self`; `bots`/`referers` also `limit`)
 - `GET /api/paths`, `/api/nets` (filters: `week`, `vhost`, `category`, `status_class`, `exclude_self`, `limit`)
 - `GET /api/nets/{net}` with drill-down
 - `POST /api/ingest[?rebuild=true]`
