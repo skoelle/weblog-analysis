@@ -19,6 +19,7 @@ from . import queries
 from .config import config
 from .db import connect, init_db
 from .fetch import fetch_and_ingest, read_fetch_status
+from .info import settings_info
 from .ingest import ingest
 from .scheduler import scheduler_loop
 
@@ -243,6 +244,14 @@ def trigger_ingest(rebuild: bool = False) -> dict:
 @app.get("/api/fetch/status")
 def fetch_status() -> dict:
     return {"last": read_fetch_status(config)}
+
+
+@app.get("/api/settings")
+def settings() -> dict:
+    try:
+        return settings_info(config)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/fetch")

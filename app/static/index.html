@@ -38,6 +38,8 @@
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
   header h1 span { color: var(--muted); font-weight: 400; }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand img { width: 22px; height: 22px; display: block; flex: none; }
   label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
   select, button {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
@@ -105,12 +107,19 @@
   }
   .settings-card h3 { margin: 0 0 6px; font-size: 14px; }
   .settings-card p { margin: 0 0 12px; color: var(--muted); }
+  .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+  .kv .warn, .settings-note .warn { color: var(--scanner); }
+  .settings-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .storage-bar { margin-top: 10px; }
 </style>
 </head>
 <body>
 <div class="topbar">
   <header>
-    <h1>Weblog Analysis <span>· combined access logs</span></h1>
+    <h1 class="brand"><img src="/static/favicon.svg" alt="" aria-hidden="true" />Weblog Analysis <span>· combined access logs</span></h1>
     <nav class="tabs">
       <button class="tab" data-tab="dashboard">Dashboard</button>
       <button class="tab" data-tab="analyse">Analyse</button>
@@ -220,6 +229,13 @@
           <p>Import log files already present in <span class="mono">LOG_DIR</span> into the database.</p>
           <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
         </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Configuration and storage</h2>
+      <div id="settingsInfo" class="settings-grid">
+        <div class="panel settings-card"><p>Loading…</p></div>
       </div>
     </section>
   </div>
@@ -481,7 +497,8 @@ function showTab(name) {
     const anchor = $("viewPanels").querySelector(".grid-2");
     $("viewPanels").insertBefore(weeks, anchor);
   }
-  if (name !== "settings") refreshAll();
+  if (name === "settings") loadSettings();
+  else refreshAll();
 }
 
 async function openNet(net) {
@@ -536,7 +553,7 @@ $("btnFetch").addEventListener("click", async () => {
     const stats = await res.json();
     const inserted = stats.ingest ? stats.ingest.inserted : 0;
     btn.textContent = `${stats.downloaded} files, ${inserted} new`;
-    await Promise.all([refreshAll(), loadFetchStatus()]);
+    await Promise.all([refreshAll(), loadFetchStatus(), loadSettings()]);
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   } catch (e) {
     console.error(e);
@@ -554,7 +571,7 @@ $("btnIngest").addEventListener("click", async () => {
   try {
     const stats = await fetch("/api/ingest", { method: "POST" }).then((r) => r.json());
     btn.textContent = `${stats.files} files`;
-    await refreshAll();
+    await Promise.all([refreshAll(), loadSettings()]);
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   } catch (e) {
     btn.textContent = "Failed";
@@ -611,6 +628,110 @@ async function loadFetchStatus() {
     renderFetchStatus(data.last);
   } catch (e) {
     console.error(e);
+  }
+}
+
+function fmtBytes(n) {
+  if (n == null) return "n/a";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+  let value = Number(n), unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function renderKV(rows) {
+  return `<dl class="kv">${rows.map(([k, v]) =>
+    `<dt>${k}</dt><dd>${v == null ? "n/a" : v}</dd>`).join("")}</dl>`;
+}
+
+function settingsCard(title, body) {
+  return `<div class="panel settings-card"><h3>${title}</h3>${body}</div>`;
+}
+
+function storageCard(entry) {
+  const title = entry.labels.join(" / ");
+  const paths = entry.paths.map((p) => `<span class="mono">${escapeHtml(p)}</span>`).join("<br>");
+  if (entry.free == null || entry.total == null) {
+    const note = entry.error ? escapeHtml(entry.error) : "not available";
+    return settingsCard(title, `${paths}<p class="settings-note">${note}</p>`);
+  }
+  const usedPct = entry.total ? Math.round(100 * entry.used / entry.total) : 0;
+  const color = entry.warning ? "var(--scanner)" : "var(--accent)";
+  const warning = entry.warning ? ' · <span class="warn">low free space</span>' : "";
+  return settingsCard(title, `${paths}
+    <div class="bar storage-bar"><span style="width:${usedPct}%;background:${color}"></span></div>
+    <p class="settings-note">${fmtBytes(entry.free)} free of ${fmtBytes(entry.total)} (${entry.percent_free ?? "?"}% free)${warning}</p>`);
+}
+
+function lastFetchCard(last) {
+  if (!last) {
+    return settingsCard("Last fetch", '<p class="settings-note">No fetch run recorded yet.</p>');
+  }
+  const f = last.fetch || {}, ing = last.ingest || {};
+  const status = last.ok
+    ? '<span style="color:var(--human)">OK</span>'
+    : '<span class="warn">FAILED</span>';
+  const rows = [
+    ["Status", status],
+    ["Finished", fmtWhen(last.finished_at)],
+    ["Downloaded", num(f.downloaded || 0)],
+    ["Skipped", num(f.skipped || 0)],
+    ["New rows", ing.inserted == null ? "n/a" : num(ing.inserted)],
+  ];
+  if (last.error) rows.push(["Error", escapeHtml(last.error)]);
+  return settingsCard("Last fetch", renderKV(rows));
+}
+
+function renderSettings(s) {
+  const rt = s.runtime, f = s.fetch, d = s.data;
+  const cards = [];
+  cards.push(settingsCard("Runtime", renderKV([
+    ["Version", escapeHtml(rt.version)],
+    ["Host / port", `${escapeHtml(rt.host)}:${rt.port}`],
+    ["Timezone", escapeHtml(rt.timezone)],
+    ["Log dir", `<span class="mono">${escapeHtml(rt.log_dir)}</span>`],
+    ["Database", `<span class="mono">${escapeHtml(rt.db_path)}</span>`],
+  ])));
+  cards.push(settingsCard("Fetch", renderKV([
+    ["Configured", f.configured ? "yes" : "no"],
+    ["SFTP host", f.host ? `<span class="mono">${escapeHtml(f.host)}</span>` : "n/a"],
+    ["SFTP user", f.user ? `<span class="mono">${escapeHtml(f.user)}</span>` : "n/a"],
+    ["Remote dir", f.remote_dir ? `<span class="mono">${escapeHtml(f.remote_dir)}</span>` : "n/a"],
+    ["Host key", f.host_key_mode],
+    ["Schedule", f.schedule.length ? f.schedule.join(", ") : "disabled"],
+    ["On startup", f.on_startup ? "yes" : "no"],
+    ["Retention", f.retention_days > 0 ? `${f.retention_days} days` : "disabled"],
+  ])));
+  cards.push(settingsCard("Data", renderKV([
+    ["Requests", num(d.total_requests)],
+    ["Networks", num(d.total_nets)],
+    ["Weeks", num(d.weeks)],
+    ["Range", d.first_day ? `${d.first_day} – ${d.last_day}` : "n/a"],
+    ["Tracked files", num(d.tracked_files)],
+    ["Parsed lines", num(d.parsed_lines)],
+    ["Failed lines", num(d.failed_lines)],
+    ["DB size", fmtBytes(d.db_size)],
+    ["WAL size", fmtBytes(d.wal_size)],
+    ["Self networks", num(d.self_networks)],
+  ])));
+  const aliasEntries = Object.entries(d.vhost_aliases || {});
+  cards.push(settingsCard("Vhost aliases", aliasEntries.length
+    ? renderKV(aliasEntries.map(([from, to]) =>
+        [`<span class="mono">${escapeHtml(from)}</span>`, `<span class="mono">${escapeHtml(to)}</span>`]))
+    : '<p class="settings-note">No extra aliases configured.</p>'));
+  (s.storage || []).forEach((entry) => cards.push(storageCard(entry)));
+  cards.push(lastFetchCard(s.last_fetch));
+  $("settingsInfo").innerHTML = cards.join("");
+}
+
+async function loadSettings() {
+  const el = $("settingsInfo");
+  el.innerHTML = '<div class="panel settings-card"><p>Loading…</p></div>';
+  try {
+    renderSettings(await api("/api/settings"));
+  } catch (e) {
+    console.error(e);
+    el.innerHTML = '<div class="panel settings-card"><p class="warn">Could not load settings.</p></div>';
   }
 }
 

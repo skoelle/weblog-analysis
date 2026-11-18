@@ -18,7 +18,8 @@ resolution gives you. For anonymised input a "visitor" always means **a network
 ## What it shows
 
 - Three tabs: **Dashboard** (always unfiltered), **Analyse** (same panels with
-  the filters below applied) and **Settings** (fetch/ingest actions)
+  the filters below applied) and **Settings** (fetch/ingest actions plus a
+  read-only overview of configuration, data volume and free disk space)
 - Weekly requests and unique networks with human/bot/scanner split
 - Category breakdown (human, search bots, AI bots, monitoring, scrapers, scanners, no UA)
 - Per-vhost traffic (aliases merged: `www.` is stripped; further mappings via
@@ -67,6 +68,12 @@ buttons in the header do the same on demand. Next to the Fetch button the header
 shows when the last fetch ran and whether it succeeded (green dot = ok, red dot
 = failed, grey = no run yet); the tooltip carries the counters and the error
 message if there was one.
+
+The **Settings** tab also lists the effective runtime configuration (paths,
+host/port, timezone, SFTP target and host-key mode, fetch schedule, retention),
+the ingested data volume (requests, networks, weeks, tracked files, failed
+lines, database/WAL size) and the free space of every filesystem behind
+`LOG_DIR` and the database path. Password and host-key values are never exposed.
 
 With `FETCH_SCHEDULE=01:30` the container fetches on its own once a day, which
 fits hosts that rotate logs shortly after midnight. The clock comes from `TZ`;

@@ -110,6 +110,8 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
 - `app/scheduler.py` – asyncio-Loop fuer `FETCH_SCHEDULE` (HH:MM, lokale Zeit)
 - `app/db.py` – Schema inkl. Migration auf `requests.sig`, `line_counts`, `ingested_files.max_day`
 - `app/retention.py` – loescht Rohlogs nach `FILE_RETENTION_DAYS`, `--dry-run` und `--days`
+- `app/info.py` – read-only Infos fuer den Settings-Tab: Runtime/Config, Speicherplatz
+  der konfigurierten Pfade, Datenbestand und letzter Fetch. Keine Secrets im Response.
 - `app/queries.py` – Wochen-/Vhost-/Netz-/Bot-Aggregationen (reines SQL).
   Statusfilter ueber `status_class` (`2xx|3xx|4xx|5xx`) laeuft durch alle
   Aggregationen inkl. `week_overview` und `net_detail`.
