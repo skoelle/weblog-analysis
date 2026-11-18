@@ -320,19 +320,20 @@ function table(rows, columns, opts = {}) {
   return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
-function renderCards(data) {
+function renderCards(data, week) {
   const totalHits = data.reduce((a, w) => a + w.hits, 0);
   const human = data.reduce((a, w) => a + w.human_hits, 0);
   const bot = data.reduce((a, w) => a + w.bot_hits, 0);
   const scanner = data.reduce((a, w) => a + w.scanner_hits, 0);
   const nets = data.length ? Math.max(...data.map((w) => w.unique_nets)) : 0;
   const pct = (v) => totalHits ? ((100 * v / totalHits).toFixed(1) + "%") : "-";
+  const scope = week || `${data.length} ${data.length === 1 ? "week" : "weeks"}`;
   const cards = [
-    ["Requests", num(totalHits), `${data.length} weeks`],
+    ["Requests", num(totalHits), scope],
     ["Human share", pct(human), `${num(human)} hits`],
     ["Bot share", pct(bot), `${num(bot)} hits`],
     ["Scanner share", pct(scanner), `${num(scanner)} hits`],
-    ["Networks / week", num(nets), "peak unique /24+/48"],
+    [week ? "Networks" : "Networks / week", num(nets), "peak unique /24+/48"],
   ];
   $("cards").innerHTML = cards.map(([k, v, s]) =>
     `<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
@@ -390,7 +391,8 @@ function svgBars(weeks) {
 
 async function loadOverview() {
   const rows = await api("/api/weeks", filtersForOverview());
-  renderCards(rows);
+  const week = isAnalyse() ? $("fWeek").value : "";
+  renderCards(week ? rows.filter((r) => r.iso_week === week) : rows, week);
   $("chartWeeks").innerHTML = svgBars(rows);
 }
 
