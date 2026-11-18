@@ -17,19 +17,33 @@ python3 -m venv .venv                     # einmalig
 .venv/bin/pytest -q                       # muss gruen sein
 ```
 
-Ingest und Server lokal:
+Entwickeln laeuft **lokal ohne Docker** ueber `./run.sh`. Es laedt `.env`
+(SFTP-Zugang, Alias-Einstellungen), benutzt aber lokale Pfade (`data/logs`,
+`data/weblog.sqlite`) und laesst den 01:30-Scheduler beim Serverstart aus.
+Docker/Compose ist nur fuer den Deploy da.
 
 ```bash
-LOG_DIR=/path/to/logs DB_PATH=./data/weblog.sqlite \
+./run.sh                     # Server auf http://127.0.0.1:8095
+./run.sh ingest              # Logs aus LOG_DIR einlesen (--rebuild, --no-self, ...)
+./run.sh fetch               # SFTP holen + Ingest (--dry-run, --force, --no-ingest)
+./run.sh retention --days 30 # Rohlogs aufraeumen
+```
+
+Ohne `run.sh` geht es auch direkt (dann Pfade explizit setzen, `.env` **nicht**
+global source'n, sonst greifen die Container-Pfade `/app/data/...`):
+
+```bash
+LOG_DIR=./data/logs DB_PATH=./data/weblog.sqlite \
   .venv/bin/python -m app.ingest            # --rebuild, --no-self, --log-dir, --db
 
-LOG_DIR=/path/to/logs DB_PATH=./data/weblog.sqlite \
+LOG_DIR=./data/logs DB_PATH=./data/weblog.sqlite \
   .venv/bin/python -m app                   # http://127.0.0.1:8095
 ```
 
-Docker:
+Deploy (nur auf dem Zielhost, `docker-compose.yml` aus dem Beispiel erzeugen):
 
 ```bash
+cp docker-compose.example.yml docker-compose.yml
 docker compose up -d --build
 docker compose exec weblog-analysis python -m app.ingest
 ```
@@ -56,8 +70,9 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
   Secrets: `WEBHOOK_URL`, `WEBHOOK_TOKEN`. Der Tag-Run feuert bewusst nicht, weil `latest`
   dort schon aktuell ist. Fehler nur bei HTTP != 2xx, `summary.failed > 0` oder
   Nichterreichbarkeit; `summary.updated == 0` ist eine Warnung.
-- `docker-compose.yml` setzt `com.centurylinklabs.watchtower.enable=true`, damit Watchtower
-  den Container im `--label-enable`-Modus aktualisiert.
+- `docker-compose.example.yml` setzt `com.centurylinklabs.watchtower.enable=true`, damit
+  Watchtower den Container im `--label-enable`-Modus aktualisiert. Im Repo liegt nur das
+  Beispiel; die echte `docker-compose.yml` ist gitignored und existiert nur im Deploy.
 - Nie Secrets oder Webhook-URLs ins Repo schreiben; sie gehoeren in die GitHub-Secrets.
 
 ## Daten Fakten (wichtig)

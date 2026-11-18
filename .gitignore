@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 data/
 .env
+docker-compose.yml
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

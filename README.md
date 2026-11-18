@@ -28,13 +28,32 @@ resolution gives you. For anonymised input a "visitor" always means **a network
 - Status filter (all / 2xx / 3xx / 4xx / 5xx) applied everywhere, so the noisy
   404 scan traffic can be hidden with one click
 
+## Quick start (local)
+
+For development run the app in the project venv — no Docker needed:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+cp .env.example .env
+# fill in SFTP_HOST, SFTP_USER, SFTP_PASS, SFTP_HOST_KEY (see below)
+./run.sh
+```
+
+`./run.sh` loads `.env` (SFTP access, vhost aliases) but uses the local paths
+`data/logs` and `data/weblog.sqlite`, and keeps the daily fetch scheduler off.
+Other subcommands: `./run.sh ingest`, `./run.sh fetch`, `./run.sh retention`.
+Open <http://127.0.0.1:8095>.
+
 ## Quick start (Docker)
 
-The compose file pulls the published image, so no checkout or build is needed:
+The compose file pulls the published image, so no checkout or build is needed.
+Copy the example first — the real `docker-compose.yml` is not tracked:
 
 ```bash
 cp .env.example .env
 # fill in SFTP_HOST, SFTP_USER, SFTP_PASS, SFTP_HOST_KEY (see below)
+cp docker-compose.example.yml docker-compose.yml
 docker compose pull
 docker compose up -d
 docker compose exec weblog-analysis python -m app.fetch
@@ -96,7 +115,7 @@ files. How they get there is up to you.
 | Producer | Setup |
 |---|---|
 | SFTP fetch (built in) | set `SFTP_*`; files land in `LOG_DIR` next to the database |
-| Bind mount | uncomment the `LOG_HOST_DIR` volume in `docker-compose.yml`, set `LOG_DIR=/logs` |
+| Bind mount | uncomment the `LOG_HOST_DIR` volume in `docker-compose.example.yml`, set `LOG_DIR=/logs` |
 | Copy | `docker cp access.log.1 weblog-analysis:/app/data/logs/` or drop files into the data volume |
 
 The SFTP fetch needs a verified host key. Either pin the fingerprint:
