@@ -497,14 +497,18 @@ function applyFilterVisibility() {
   $("sectionVhosts").hidden = on && !!$("fVhost").value;
   $("sectionCategories").hidden = on && !!cat;
   $("sectionBots").hidden = on && ["browser", "empty"].includes(cat);
+  $("sectionPaths").hidden = !on;
+  $("sectionReferers").hidden = !on;
 }
 
 async function refreshAll() {
   applyFilterVisibility();
-  const jobs = [loadOverview(), loadPaths(), loadNets(), loadStatus(), loadReferers()];
+  const jobs = [loadOverview(), loadNets(), loadStatus()];
   if (!$("sectionCategories").hidden) jobs.push(loadCategories());
   if (!$("sectionVhosts").hidden) jobs.push(loadVhosts());
   if (!$("sectionBots").hidden) jobs.push(loadBots());
+  if (!$("sectionPaths").hidden) jobs.push(loadPaths());
+  if (!$("sectionReferers").hidden) jobs.push(loadReferers());
   try {
     await Promise.all(jobs);
   } catch (e) {
