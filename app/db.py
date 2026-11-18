@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS self_networks (
+    net TEXT PRIMARY KEY
+);
+
 CREATE TABLE IF NOT EXISTS ingested_files (
     path        TEXT PRIMARY KEY,
     size        INTEGER NOT NULL,
@@ -146,6 +150,12 @@ def _build_line_counts(conn: sqlite3.Connection) -> None:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    # Older versions stored only one history network in the meta table (the
+    # primary key collapsed the rest). Move it into the dedicated table.
+    for row in conn.execute("SELECT value FROM meta WHERE key = 'self_net'").fetchall():
+        if row["value"]:
+            conn.execute("INSERT OR IGNORE INTO self_networks(net) VALUES(?)", (row["value"],))
+
     if not _has_column(conn, "requests", "sig"):
         conn.execute("ALTER TABLE requests ADD COLUMN sig BLOB")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_requests_sig ON requests(sig)")

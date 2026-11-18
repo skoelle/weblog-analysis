@@ -421,3 +421,21 @@ def test_untracked_max_day_row_is_dropped_for_reread(tmp_path: Path):
     _backfill_max_day(conn)
     assert conn.execute("SELECT COUNT(*) FROM ingested_files").fetchone()[0] == 0
     conn.close()
+
+
+def test_all_history_networks_are_stored(tmp_path: Path, monkeypatch):
+    cfg = make_config(tmp_path)
+    cfg.history_url = "https://history.example.org/api"
+    monkeypatch.setattr(
+        "app.ingest.fetch_self_networks",
+        lambda url, timeout=10.0: {"192.0.2.0", "203.0.113.0"},
+    )
+
+    ingest(cfg)
+
+    conn = connect(cfg.db_path)
+    try:
+        networks = {row["net"] for row in conn.execute("SELECT net FROM self_networks")}
+    finally:
+        conn.close()
+    assert networks == {"192.0.2.0", "203.0.113.0"}

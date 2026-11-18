@@ -278,8 +278,8 @@ def ingest(
         if fetched:
             self_networks |= fetched
             conn.executemany(
-                "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
-                [("self_net", net) for net in sorted(fetched)],
+                "INSERT OR IGNORE INTO self_networks(net) VALUES(?)",
+                [(net,) for net in sorted(fetched)],
             )
             conn.commit()
 

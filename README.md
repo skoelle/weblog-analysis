@@ -72,8 +72,10 @@ message if there was one.
 The **Settings** tab also lists the effective runtime configuration (paths,
 host/port, timezone, SFTP target and host-key mode, fetch schedule, retention),
 the ingested data volume (requests, networks, weeks, tracked files, failed
-lines, database/WAL size) and the free space of every filesystem behind
-`LOG_DIR` and the database path. Password and host-key values are never exposed.
+lines, database/WAL size), the own networks used by the self-traffic exclusion
+(with their source `config`/`history` and the requests flagged as own) and the
+free space of every filesystem behind `LOG_DIR` and the database path. Password
+and host-key values are never exposed.
 
 With `FETCH_SCHEDULE=01:30` the container fetches on its own once a day, which
 fits hosts that rotate logs shortly after midnight. The clock comes from `TZ`;

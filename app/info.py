@@ -15,6 +15,7 @@ from datetime import datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import queries
 from .config import Config
@@ -161,6 +162,30 @@ def _file_size(path: Path) -> int | None:
         return None
 
 
+def _history_host(history_url: str) -> str | None:
+    """Return only the host name, never userinfo or a token in the path."""
+    if not history_url:
+        return None
+    try:
+        return urlsplit(history_url).hostname or None
+    except ValueError:  # pragma: no cover - malformed URLs are user input
+        return None
+
+
+def _self_network_list(conn: sqlite3.Connection, cfg: Config) -> list[dict[str, Any]]:
+    config_nets = set(cfg.self_networks)
+    history_nets = {row["net"] for row in conn.execute("SELECT net FROM self_networks")}
+    networks = []
+    for net in sorted(config_nets | history_nets):
+        sources = []
+        if net in config_nets:
+            sources.append("config")
+        if net in history_nets:
+            sources.append("history")
+        networks.append({"net": net, "sources": sources})
+    return networks
+
+
 def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, Any]:
     cfg = cfg or default_config
     summary = queries.summary(conn)
@@ -175,7 +200,10 @@ def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, 
         FROM ingested_files
         """
     ).fetchone()
-    self_networks = conn.execute("SELECT COUNT(*) FROM meta WHERE key = 'self_net'").fetchone()[0]
+    self_stats = conn.execute(
+        "SELECT COUNT(*) AS hits, COUNT(DISTINCT net) AS nets FROM requests WHERE is_self = 1"
+    ).fetchone()
+    self_networks = _self_network_list(conn, cfg)
     db_path = Path(cfg.db_path)
     return {
         **summary,
@@ -187,7 +215,12 @@ def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, 
         "newest_day": files["newest_day"],
         "db_size": _file_size(db_path),
         "wal_size": _file_size(Path(f"{db_path}-wal")),
-        "self_networks": self_networks,
+        "self_network_list": self_networks,
+        "self_network_count": len(self_networks),
+        "history_configured": bool(cfg.history_url),
+        "history_host": _history_host(cfg.history_url),
+        "self_hits": self_stats["hits"],
+        "self_nets_observed": self_stats["nets"],
         "vhost_aliases": dict(cfg.vhost_aliases),
         "retention_days": cfg.file_retention_days,
     }

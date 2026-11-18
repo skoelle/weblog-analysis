@@ -114,6 +114,9 @@
   .kv .warn, .settings-note .warn { color: var(--scanner); }
   .settings-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
   .storage-bar { margin-top: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; max-height: 160px; overflow: auto; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); font-size: 12px; }
+  .chip .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
 </style>
 </head>
 <body>
@@ -682,6 +685,25 @@ function lastFetchCard(last) {
   return settingsCard("Last fetch", renderKV(rows));
 }
 
+function selfNetworksCard(d) {
+  const networks = d.self_network_list || [];
+  const chips = networks.length
+    ? `<div class="chips">${networks.map((entry) =>
+        `<span class="chip"><span class="mono">${escapeHtml(entry.net)}</span>${(entry.sources || [])
+          .map((src) => `<span class="tag">${escapeHtml(src)}</span>`).join("")}</span>`).join("")}</div>`
+    : '<p class="settings-note">No own networks detected. Set <span class="mono">SELF_NETWORKS</span> or <span class="mono">HISTORY_URL</span>.</p>';
+  const history = d.history_configured
+    ? `enabled${d.history_host ? ` (${escapeHtml(d.history_host)})` : ""}`
+    : "disabled";
+  return settingsCard("Own networks (excluded)", `${chips}
+    ${renderKV([
+      ["History lookup", history],
+      ["Requests flagged own", num(d.self_hits)],
+      ["Networks observed", num(d.self_nets_observed)],
+    ])}
+    <p class="settings-note">The own flag is set during ingest; newly detected networks only affect future imports.</p>`);
+}
+
 function renderSettings(s) {
   const rt = s.runtime, f = s.fetch, d = s.data;
   const cards = [];
@@ -712,8 +734,8 @@ function renderSettings(s) {
     ["Failed lines", num(d.failed_lines)],
     ["DB size", fmtBytes(d.db_size)],
     ["WAL size", fmtBytes(d.wal_size)],
-    ["Self networks", num(d.self_networks)],
   ])));
+  cards.push(selfNetworksCard(d));
   const aliasEntries = Object.entries(d.vhost_aliases || {});
   cards.push(settingsCard("Vhost aliases", aliasEntries.length
     ? renderKV(aliasEntries.map(([from, to]) =>
