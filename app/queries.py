@@ -35,10 +35,16 @@ def _placeholders(values: tuple[str, ...]) -> str:
 def week_overview(
     conn: sqlite3.Connection,
     *,
+    vhost: str | None = None,
+    category: str | None = None,
     exclude_self: bool = False,
     status_class: str | None = None,
 ) -> list[dict[str, Any]]:
     clauses = ["1=1"]
+    if vhost:
+        clauses.append("vhost = ?")
+    if category:
+        clauses.append("category = ?")
     if exclude_self:
         clauses.append("is_self = 0")
     status_clause = _status_clause(status_class)
@@ -64,7 +70,12 @@ def week_overview(
     GROUP BY iso_week
     ORDER BY iso_week
     """
-    rows = conn.execute(sql, BOT_CATEGORIES).fetchall()
+    params: list[Any] = [*BOT_CATEGORIES]
+    if vhost:
+        params.append(vhost)
+    if category:
+        params.append(category)
+    rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
 

@@ -17,6 +17,8 @@ resolution gives you. For anonymised input a "visitor" always means **a network
 
 ## What it shows
 
+- Three tabs: **Dashboard** (always unfiltered), **Analyse** (same panels with
+  the filters below applied) and **Settings** (fetch/ingest actions)
 - Weekly requests and unique networks with human/bot/scanner split
 - Category breakdown (human, search bots, AI bots, monitoring, scrapers, scanners, no UA)
 - Per-vhost traffic (aliases merged: `www.` is stripped; further mappings via
@@ -237,7 +239,7 @@ to the database (`.fetch-manifest.tsv`); `--force` ignores it.
 ## API
 
 - `GET /api/health`, `/api/filters`
-- `GET /api/weeks[?exclude_self=true]`
+- `GET /api/weeks[?vhost=…&category=…&status_class=…&exclude_self=true]` (no `week`: the chart always spans all weeks)
 - `GET /api/vhosts`, `/api/categories`, `/api/bots`, `/api/status`, `/api/referers`
 - `GET /api/paths`, `/api/nets` (filters: `week`, `vhost`, `category`, `status_class`, `exclude_self`, `limit`)
 - `GET /api/nets/{net}` with drill-down

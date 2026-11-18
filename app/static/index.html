@@ -37,7 +37,6 @@
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
   header h1 span { color: var(--muted); font-weight: 400; }
-  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
   select, button {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
@@ -92,12 +91,33 @@
   .fetch-status.ok .dot { background: var(--human); }
   .fetch-status.error .dot { background: var(--scanner); }
   .fetch-status.error { color: var(--scanner); }
+  .tabs { display: flex; gap: 4px; }
+  .tab { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 6px 12px; border-radius: 8px; }
+  .tab:hover { color: var(--text); border-color: var(--border); }
+  .tab.active { background: var(--panel-2); color: var(--text); border-color: var(--border); }
+  [hidden] { display: none !important; }
+  #filterBar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 20px;
+  }
+  .settings-card h3 { margin: 0 0 6px; font-size: 14px; }
+  .settings-card p { margin: 0 0 12px; color: var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <h1>Weblog Analysis <span>· combined access logs</span></h1>
-  <div class="controls">
+  <nav class="tabs">
+    <button class="tab" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="analyse">Analyse</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+  <span id="fetchStatus" class="fetch-status" title="No fetch run recorded yet"><span class="dot"></span><span class="txt">no fetch yet</span></span>
+</header>
+
+<main>
+  <div id="filterBar" hidden>
     <label>Week <select id="fWeek"><option value="">All weeks</option></select></label>
     <label>Vhost <select id="fVhost"><option value="">All vhosts</option></select></label>
     <label>Category
@@ -123,64 +143,79 @@
       </select>
     </label>
     <label><input type="checkbox" id="fExcludeSelf" /> Exclude own traffic</label>
-    <button id="btnFetch" title="Download new log files over SFTP">Fetch</button>
-    <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
-    <span id="fetchStatus" class="fetch-status" title="No fetch run recorded yet"><span class="dot"></span><span class="txt">no fetch yet</span></span>
   </div>
-</header>
 
-<main>
-  <div class="cards" id="cards"></div>
+  <div id="viewPanels">
+    <div class="cards" id="cards"></div>
 
-  <section>
-    <h2>Weekly visitors and traffic</h2>
-    <div class="panel">
-      <div id="chartWeeks"></div>
-      <div class="legend">
-        <span><i style="background:var(--human)"></i>Human hits</span>
-        <span><i style="background:var(--bot)"></i>Bot hits</span>
-        <span><i style="background:var(--scanner)"></i>Scanners</span>
-        <span><i style="background:var(--other)"></i>Other / no UA</span>
-        <span><i style="background:var(--accent)"></i>Unique networks (line)</span>
+    <section>
+      <h2>Weekly visitors and traffic</h2>
+      <div class="panel">
+        <div id="chartWeeks"></div>
+        <div class="legend">
+          <span><i style="background:var(--human)"></i>Human hits</span>
+          <span><i style="background:var(--bot)"></i>Bot hits</span>
+          <span><i style="background:var(--scanner)"></i>Scanners</span>
+          <span><i style="background:var(--other)"></i>Other / no UA</span>
+          <span><i style="background:var(--accent)"></i>Unique networks (line)</span>
+        </div>
       </div>
+    </section>
+
+    <div class="grid-2">
+      <section>
+        <h2>Categories</h2>
+        <div class="panel"><div id="tblCategories"></div></div>
+      </section>
+      <section>
+        <h2>Vhosts</h2>
+        <div class="panel scroll"><div id="tblVhosts"></div></div>
+      </section>
     </div>
-  </section>
 
-  <div class="grid-2">
+    <div class="grid-2">
+      <section>
+        <h2>Bots and crawlers</h2>
+        <div class="panel scroll"><div id="tblBots"></div></div>
+      </section>
+      <section>
+        <h2>Top paths</h2>
+        <div class="panel scroll"><div id="tblPaths"></div></div>
+      </section>
+    </div>
+
     <section>
-      <h2>Categories</h2>
-      <div class="panel"><div id="tblCategories"></div></div>
+      <h2>Top networks / visitors <span class="tag">(click a row for details)</span></h2>
+      <div class="panel scroll"><div id="tblNets"></div></div>
     </section>
-    <section>
-      <h2>Vhosts</h2>
-      <div class="panel scroll"><div id="tblVhosts"></div></div>
-    </section>
+
+    <div class="grid-2">
+      <section>
+        <h2>Status codes</h2>
+        <div class="panel"><div id="tblStatus"></div></div>
+      </section>
+      <section>
+        <h2>Top referers</h2>
+        <div class="panel scroll"><div id="tblReferers"></div></div>
+      </section>
+    </div>
   </div>
 
-  <div class="grid-2">
+  <div id="viewSettings" hidden>
     <section>
-      <h2>Bots and crawlers</h2>
-      <div class="panel scroll"><div id="tblBots"></div></div>
-    </section>
-    <section>
-      <h2>Top paths</h2>
-      <div class="panel scroll"><div id="tblPaths"></div></div>
-    </section>
-  </div>
-
-  <section>
-    <h2>Top networks / visitors <span class="tag">(click a row for details)</span></h2>
-    <div class="panel scroll"><div id="tblNets"></div></div>
-  </section>
-
-  <div class="grid-2">
-    <section>
-      <h2>Status codes</h2>
-      <div class="panel"><div id="tblStatus"></div></div>
-    </section>
-    <section>
-      <h2>Top referers</h2>
-      <div class="panel scroll"><div id="tblReferers"></div></div>
+      <h2>Data</h2>
+      <div class="grid-2">
+        <div class="panel settings-card">
+          <h3>Fetch</h3>
+          <p>Download new log files from the SFTP server into <span class="mono">LOG_DIR</span>, then import them.</p>
+          <button id="btnFetch" title="Download new log files over SFTP">Fetch</button>
+        </div>
+        <div class="panel settings-card">
+          <h3>Ingest</h3>
+          <p>Import log files already present in <span class="mono">LOG_DIR</span> into the database.</p>
+          <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
+        </div>
+      </div>
     </section>
   </div>
 </main>
@@ -198,9 +233,17 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const state = { weeks: [], vhosts: [] };
+const TABS = ["dashboard", "analyse", "settings"];
+
+function activeTab() {
+  const h = (location.hash || "").replace(/^#/, "");
+  return TABS.includes(h) ? h : "dashboard";
+}
+const isAnalyse = () => activeTab() === "analyse";
 
 function filters() {
   const p = new URLSearchParams();
+  if (!isAnalyse()) return p;
   const w = $("fWeek").value, v = $("fVhost").value, c = $("fCategory").value;
   const s = $("fStatus").value;
   if (w) p.set("week", w);
@@ -213,9 +256,12 @@ function filters() {
 
 function filtersForOverview() {
   const p = new URLSearchParams();
-  if ($("fExcludeSelf").checked) p.set("exclude_self", "true");
-  const s = $("fStatus").value;
+  if (!isAnalyse()) return p;
+  const v = $("fVhost").value, c = $("fCategory").value, s = $("fStatus").value;
+  if (v) p.set("vhost", v);
+  if (c) p.set("category", c);
   if (s) p.set("status_class", s);
+  if ($("fExcludeSelf").checked) p.set("exclude_self", "true");
   return p;
 }
 
@@ -416,12 +462,24 @@ async function refreshAll() {
   }
 }
 
+function showTab(name) {
+  if (!TABS.includes(name)) name = "dashboard";
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.classList.toggle("active", t.dataset.tab === name));
+  $("filterBar").hidden = name !== "analyse";
+  $("viewPanels").hidden = name === "settings";
+  $("viewSettings").hidden = name !== "settings";
+  if (name !== "settings") refreshAll();
+}
+
 async function openNet(net) {
   const p = new URLSearchParams();
-  const w = $("fWeek").value;
-  const statusClass = $("fStatus").value;
-  if (w) p.set("week", w);
-  if (statusClass) p.set("status_class", statusClass);
+  if (isAnalyse()) {
+    const w = $("fWeek").value;
+    const statusClass = $("fStatus").value;
+    if (w) p.set("week", w);
+    if (statusClass) p.set("status_class", statusClass);
+  }
   const data = await api(`/api/nets/${encodeURIComponent(net)}`, p);
   const s = data.summary;
   $("netTitle").textContent = `Network ${s.net} · ${s.sample_ip}`;
@@ -495,6 +553,10 @@ $("btnIngest").addEventListener("click", async () => {
 ["fWeek", "fVhost", "fCategory", "fStatus"].forEach((id) => $(id).addEventListener("change", refreshAll));
 $("fExcludeSelf").addEventListener("change", refreshAll);
 
+document.querySelectorAll(".tab").forEach((t) =>
+  t.addEventListener("click", () => { location.hash = t.dataset.tab; }));
+window.addEventListener("hashchange", () => showTab(activeTab()));
+
 function fmtWhen(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso || "-";
@@ -548,7 +610,8 @@ async function init() {
   state.vhosts.forEach((v) => vhost.insertAdjacentHTML("beforeend", `<option value="${v}">${v}</option>`));
   const latest = state.weeks[state.weeks.length - 1];
   if (latest) week.value = latest;
-  await Promise.all([refreshAll(), loadFetchStatus()]);
+  showTab(activeTab());
+  await loadFetchStatus();
 }
 
 init();

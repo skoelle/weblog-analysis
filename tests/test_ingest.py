@@ -153,6 +153,26 @@ def test_status_class_filter(tmp_path: Path):
     conn.close()
 
 
+def test_week_overview_vhost_and_category_filter(tmp_path: Path):
+    cfg = make_config(tmp_path)
+    ingest(cfg, refresh_self=False)
+    conn = connect(cfg.db_path)
+    init_db(conn)
+
+    by_vhost = queries.week_overview(conn, vhost="example.net")
+    assert len(by_vhost) == 1
+    assert by_vhost[0]["hits"] == 1
+
+    by_category = queries.week_overview(conn, category="browser")
+    assert len(by_category) == 1
+    assert by_category[0]["hits"] == 2
+    assert by_category[0]["human_hits"] == 2
+
+    combined = queries.week_overview(conn, vhost="example.org", category="browser")
+    assert combined[0]["hits"] <= 4
+    conn.close()
+
+
 def test_status_class_validation(tmp_path: Path, monkeypatch):
     from fastapi.testclient import TestClient
 
@@ -163,6 +183,8 @@ def test_status_class_validation(tmp_path: Path, monkeypatch):
     with TestClient(app) as client:
         response = client.get("/api/weeks", params={"status_class": "2xx"})
         assert response.status_code == 200
+        filtered = client.get("/api/weeks", params={"vhost": "example.org", "category": "browser"})
+        assert filtered.status_code == 200
         bad = client.get("/api/weeks", params={"status_class": "nope"})
         assert bad.status_code == 422
 

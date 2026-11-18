@@ -76,8 +76,19 @@ def health() -> dict:
 
 
 @app.get("/api/weeks")
-def weeks(exclude_self: bool = False, status_class: StatusClass | None = None) -> list[dict]:
-    return _read(queries.week_overview, exclude_self=exclude_self, status_class=status_class)
+def weeks(
+    vhost: str | None = None,
+    category: str | None = None,
+    exclude_self: bool = False,
+    status_class: StatusClass | None = None,
+) -> list[dict]:
+    return _read(
+        queries.week_overview,
+        vhost=vhost,
+        category=category,
+        exclude_self=exclude_self,
+        status_class=status_class,
+    )
 
 
 @app.get("/api/filters")
