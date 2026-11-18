@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import queries
+from . import aggregate, queries
 from .config import config
 from .db import connect, init_db
 from .fetch import fetch_and_ingest, read_fetch_status
@@ -38,6 +38,13 @@ def get_conn():
 async def lifespan(app: FastAPI):
     conn = get_conn()
     init_db(conn)
+    # Existing databases and failed builds are caught up here; a failure must
+    # not stop the server from starting.
+    if aggregate.is_stale(conn):
+        try:
+            aggregate.build(conn, trigger="startup")
+        except Exception:  # pragma: no cover - build already swallows errors
+            log.warning("Dashboard-Aggregat beim Start fehlgeschlagen", exc_info=True)
     conn.close()
 
     tasks: list[asyncio.Task] = []
@@ -245,6 +252,15 @@ def referers(
 def trigger_ingest(rebuild: bool = False) -> dict:
     stats = ingest(rebuild_first=rebuild)
     return stats
+
+
+@app.post("/api/aggregate")
+def trigger_aggregate() -> dict:
+    conn = get_conn()
+    try:
+        return aggregate.build(conn, trigger="manual")
+    finally:
+        conn.close()
 
 
 @app.get("/api/fetch/status")

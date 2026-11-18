@@ -236,6 +236,12 @@
           <p>Import log files already present in <span class="mono">LOG_DIR</span> into the database.</p>
           <button class="primary" id="btnIngest" title="Import new log files">Ingest</button>
         </div>
+        <div class="panel settings-card">
+          <h3>Dashboard aggregate</h3>
+          <p>Precomputed dashboard data. Rebuilt automatically after every ingest.</p>
+          <button id="btnAggregate" title="Rebuild the dashboard aggregate">Rebuild</button>
+          <p id="aggStatus" class="settings-note">Loading...</p>
+        </div>
       </div>
     </section>
 
@@ -609,11 +615,32 @@ $("btnIngest").addEventListener("click", async () => {
   btn.innerHTML = '<span class="spinner"></span> Ingesting';
   try {
     const stats = await fetch("/api/ingest", { method: "POST" }).then((r) => r.json());
-    btn.textContent = `${stats.files} files`;
+    const agg = stats.aggregate && stats.aggregate.ok ? `, agg ${num(stats.aggregate.ms)}ms` : "";
+    btn.textContent = `${stats.files} files${agg}`;
     await Promise.all([refreshAll(), loadSettings()]);
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   } catch (e) {
     btn.textContent = "Failed";
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  }
+});
+
+$("btnAggregate").addEventListener("click", async () => {
+  const btn = $("btnAggregate");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Building';
+  try {
+    const res = await fetch("/api/aggregate", { method: "POST" });
+    if (!res.ok) throw new Error(`aggregate -> ${res.status}`);
+    const stats = await res.json();
+    btn.textContent = stats.ok ? `${num(stats.rows)} rows` : "Failed";
+    await Promise.all([refreshAll(), loadSettings()]);
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  } catch (e) {
+    console.error(e);
+    btn.textContent = "Failed";
+    await loadSettings();
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   }
 });
@@ -763,6 +790,40 @@ function selfNetworksCard(d) {
     <p class="settings-note">Exclusion is time-aware: a network counts as own only while its history interval is active. Existing flags are only added, never removed. Networks come from the dyndns history; the access logs themselves stay anonymised to /24 or /48.</p>`);
 }
 
+function aggregateCard(a) {
+  if (!a || !a.built_at) {
+    return settingsCard("Dashboard aggregate", '<p class="settings-note">Not built yet.</p>');
+  }
+  const status = a.ok
+    ? '<span style="color:var(--human)">OK</span>'
+    : '<span class="warn">FAILED</span>';
+  const rows = [
+    ["Status", status],
+    ["Built", fmtWhen(a.built_at)],
+    ["Rows", num(a.rows)],
+    ["Duration", a.ms == null ? "n/a" : `${num(a.ms)} ms`],
+    ["Trigger", escapeHtml(a.trigger || "-")],
+  ];
+  if (a.error) rows.push(["Error", escapeHtml(a.error)]);
+  return settingsCard("Dashboard aggregate", renderKV(rows));
+}
+
+function renderAggregateStatus(a) {
+  const el = $("aggStatus");
+  if (!el) return;
+  el.className = "settings-note";
+  if (!a || !a.built_at) {
+    el.textContent = "Not built yet.";
+    return;
+  }
+  if (a.ok) {
+    el.textContent = `Last built ${fmtWhen(a.built_at)} · ${num(a.rows)} rows · ${num(a.ms)} ms`;
+  } else {
+    el.className = "settings-note warn";
+    el.textContent = `Failed ${fmtWhen(a.built_at)}: ${a.error || "unknown error"}`;
+  }
+}
+
 function renderSettings(s) {
   const rt = s.runtime, f = s.fetch, d = s.data;
   const cards = [];
@@ -796,6 +857,7 @@ function renderSettings(s) {
   ])));
   cards.push(selfNetworksCard(d));
   (s.storage || []).forEach((entry) => cards.push(storageCard(entry)));
+  cards.push(aggregateCard(d.aggregate));
   cards.push(lastFetchCard(s.last_fetch));
   const aliasEntries = Object.entries(d.vhost_aliases || {});
   cards.push(settingsCard("Vhost aliases", aliasEntries.length
@@ -803,6 +865,7 @@ function renderSettings(s) {
         [`<span class="mono">${escapeHtml(from)}</span>`, `<span class="mono">${escapeHtml(to)}</span>`]))
     : '<p class="settings-note">No extra aliases configured.</p>'));
   $("settingsInfo").innerHTML = cards.join("");
+  renderAggregateStatus(d.aggregate);
   const ownNetsButton = $("btnOwnNets");
   if (ownNetsButton) ownNetsButton.addEventListener("click", openOwnNets);
 }

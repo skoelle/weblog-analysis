@@ -120,6 +120,12 @@ die Rotation endet kurz nach Mitternacht) sowie per **Fetch**-Knopf und
 - `app/queries.py` – Wochen-/Vhost-/Netz-/Bot-Aggregationen (reines SQL).
   Statusfilter ueber `status_class` (`2xx|3xx|4xx|5xx`) laeuft durch alle
   Aggregationen inkl. `week_overview` und `net_detail`.
+- `app/aggregate.py` – vorberechnetes Dashboard-Aggregat `agg_net` (Grain
+  `iso_week, vhost, category, is_self, status, net`) fuer die sechs Dashboard-Panels.
+  Wird nach jedem Ingest neu gebaut (transaktional, fehlertolerant), beim Start bei
+  Bedarf und per `POST /api/aggregate`/CLI `python -m app.aggregate`. `net` bleibt
+  Dimension, damit `COUNT(DISTINCT net)` exakt ist. `top_paths`, `referer_breakdown`
+  und `net_detail` laufen weiter live gegen `requests`.
 - `app/main.py` – FastAPI-Routen + statisches Dashboard
 - `app/static/index.html` – Vanilla-JS-Dashboard, inline SVG-Charts, keine externen CDNs
 - `app/selfip.py` – eigene IP-Historie (Zeit + Netz) aus der dyndns-updater

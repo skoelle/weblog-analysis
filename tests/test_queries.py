@@ -4,7 +4,7 @@
 
 from pathlib import Path
 
-from app import queries
+from app import aggregate, queries
 from app.db import connect, init_db
 
 BASE_ROW = {
@@ -66,6 +66,7 @@ def _seeded_conn(tmp_path: Path):
         referer="https://c.example.org",
     )
     conn.commit()
+    aggregate.build(conn)
     return conn
 
 

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import queries
+from . import aggregate, queries
 from .config import Config
 from .config import config as default_config
 from .db import connect
@@ -253,6 +253,7 @@ def data_info(conn: sqlite3.Connection, cfg: Config | None = None) -> dict[str, 
         "self_nets_observed": self_stats["nets"],
         "vhost_aliases": dict(cfg.vhost_aliases),
         "retention_days": cfg.file_retention_days,
+        "aggregate": aggregate.status(conn),
     }
 
 

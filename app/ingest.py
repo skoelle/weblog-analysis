@@ -20,8 +20,9 @@ from collections import Counter
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from . import classify
+from . import aggregate, classify
 from .config import Config
 from .config import config as default_config
 from .db import SIG_FIELDS, connect, init_db, iter_signature_chunks, line_signature
@@ -292,7 +293,7 @@ def ingest(
     *,
     rebuild_first: bool = False,
     refresh_self: bool = True,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     cfg = cfg or default_config
     conn = connect(cfg.db_path)
     init_db(conn)
@@ -346,6 +347,18 @@ def ingest(
         )
 
     stats["seconds"] = int(time.monotonic() - started)
+
+    # The dashboard never changes while data is static, so materialise its
+    # aggregate right after import. Skip the work on a no-op ingest.
+    if (
+        stats["files"]
+        or stats["inserted"]
+        or stats["self_backfilled"]
+        or rebuild_first
+        or aggregate.is_stale(conn)
+    ):
+        stats["aggregate"] = aggregate.build(conn, trigger="ingest")
+
     conn.close()
     return stats
 

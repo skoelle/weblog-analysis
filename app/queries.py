@@ -54,18 +54,18 @@ def week_overview(
     sql = f"""
     SELECT
         iso_week,
-        COUNT(*) AS hits,
+        SUM(hits) AS hits,
         COUNT(DISTINCT net) AS unique_nets,
-        SUM(CASE WHEN category = 'browser' THEN 1 ELSE 0 END) AS human_hits,
-        SUM(CASE WHEN category IN ({_placeholders(BOT_CATEGORIES)}) THEN 1 ELSE 0 END)
+        SUM(CASE WHEN category = 'browser' THEN hits ELSE 0 END) AS human_hits,
+        SUM(CASE WHEN category IN ({_placeholders(BOT_CATEGORIES)}) THEN hits ELSE 0 END)
             AS bot_hits,
-        SUM(CASE WHEN category = 'scanner' THEN 1 ELSE 0 END) AS scanner_hits,
-        SUM(CASE WHEN category IN ('other', 'empty') THEN 1 ELSE 0 END) AS other_hits,
-        SUM(CASE WHEN status BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS status_2xx,
-        SUM(CASE WHEN status BETWEEN 300 AND 399 THEN 1 ELSE 0 END) AS status_3xx,
-        SUM(CASE WHEN status BETWEEN 400 AND 499 THEN 1 ELSE 0 END) AS status_4xx,
-        SUM(CASE WHEN status BETWEEN 500 AND 599 THEN 1 ELSE 0 END) AS status_5xx
-    FROM requests
+        SUM(CASE WHEN category = 'scanner' THEN hits ELSE 0 END) AS scanner_hits,
+        SUM(CASE WHEN category IN ('other', 'empty') THEN hits ELSE 0 END) AS other_hits,
+        SUM(CASE WHEN status BETWEEN 200 AND 299 THEN hits ELSE 0 END) AS status_2xx,
+        SUM(CASE WHEN status BETWEEN 300 AND 399 THEN hits ELSE 0 END) AS status_3xx,
+        SUM(CASE WHEN status BETWEEN 400 AND 499 THEN hits ELSE 0 END) AS status_4xx,
+        SUM(CASE WHEN status BETWEEN 500 AND 599 THEN hits ELSE 0 END) AS status_5xx
+    FROM agg_net
     WHERE {where}
     GROUP BY iso_week
     ORDER BY iso_week
@@ -144,13 +144,13 @@ def top_nets(
     where, params = _filters(iso_week, vhost, category, exclude_self, status_class)
     sql = f"""
     SELECT net, ip_version,
-           MIN(ip) AS sample_ip,
-           COUNT(*) AS hits,
+           MIN(sample_ip) AS sample_ip,
+           SUM(hits) AS hits,
            COUNT(DISTINCT vhost) AS vhosts,
            MAX(bot_name) AS bot_name,
            MAX(category) AS category,
            MAX(is_self) AS is_self
-    FROM requests
+    FROM agg_net
     WHERE {where}
     GROUP BY net
     ORDER BY hits DESC
@@ -235,10 +235,10 @@ def category_breakdown(
     where, params = _filters(iso_week, vhost, None, exclude_self, status_class)
     sql = f"""
     SELECT category,
-           COUNT(*) AS hits,
+           SUM(hits) AS hits,
            COUNT(DISTINCT net) AS unique_nets,
            MAX(bot_name) AS bot_name
-    FROM requests
+    FROM agg_net
     WHERE {where}
     GROUP BY category
     ORDER BY hits DESC
@@ -265,9 +265,9 @@ def bot_breakdown(
     sql = f"""
     SELECT COALESCE(bot_name, category) AS name,
            category,
-           COUNT(*) AS hits,
+           SUM(hits) AS hits,
            COUNT(DISTINCT net) AS unique_nets
-    FROM requests
+    FROM agg_net
     WHERE {where} AND category NOT IN ('browser', 'empty')
     GROUP BY name, category
     ORDER BY hits DESC
@@ -287,11 +287,11 @@ def vhost_breakdown(
     where, params = _filters(iso_week, None, None, exclude_self, status_class)
     sql = f"""
     SELECT vhost,
-           COUNT(*) AS hits,
+           SUM(hits) AS hits,
            COUNT(DISTINCT net) AS unique_nets,
-           SUM(CASE WHEN category = 'browser' THEN 1 ELSE 0 END) AS human_hits,
-           SUM(CASE WHEN category = 'scanner' THEN 1 ELSE 0 END) AS scanner_hits
-    FROM requests
+           SUM(CASE WHEN category = 'browser' THEN hits ELSE 0 END) AS human_hits,
+           SUM(CASE WHEN category = 'scanner' THEN hits ELSE 0 END) AS scanner_hits
+    FROM agg_net
     WHERE {where}
     GROUP BY vhost
     ORDER BY hits DESC
@@ -311,8 +311,8 @@ def status_breakdown(
 ) -> list[dict[str, Any]]:
     where, params = _filters(iso_week, vhost, category, exclude_self, status_class)
     sql = f"""
-    SELECT status, COUNT(*) AS hits
-    FROM requests
+    SELECT status, SUM(hits) AS hits
+    FROM agg_net
     WHERE {where}
     GROUP BY status
     ORDER BY hits DESC

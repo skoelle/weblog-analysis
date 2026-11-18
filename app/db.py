@@ -9,7 +9,7 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 LINE_COUNTS_VERSION = 2
 
 SCHEMA = """
@@ -75,6 +75,22 @@ CREATE TABLE IF NOT EXISTS line_counts (
     PRIMARY KEY (sig, source_file)
 ) WITHOUT ROWID;
 
+-- Precomputed dashboard aggregate. Rebuilt after every ingest, so the
+-- dashboard never has to scan the (unbounded) ``requests`` table itself.
+-- ``net`` is a dimension so ``COUNT(DISTINCT net)`` stays exact.
+CREATE TABLE IF NOT EXISTS agg_net (
+    iso_week   TEXT    NOT NULL,
+    vhost      TEXT    NOT NULL,
+    category   TEXT    NOT NULL,
+    is_self    INTEGER NOT NULL,
+    status     INTEGER NOT NULL,
+    net        TEXT    NOT NULL,
+    ip_version TEXT    NOT NULL,
+    sample_ip  TEXT,
+    bot_name   TEXT,
+    hits       INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_requests_week  ON requests(iso_week);
 CREATE INDEX IF NOT EXISTS idx_requests_ts    ON requests(ts);
 CREATE INDEX IF NOT EXISTS idx_requests_net   ON requests(net);
@@ -84,6 +100,9 @@ CREATE INDEX IF NOT EXISTS idx_requests_ip    ON requests(ip);
 CREATE INDEX IF NOT EXISTS idx_requests_src   ON requests(source_file);
 CREATE INDEX IF NOT EXISTS idx_requests_week_vhost ON requests(iso_week, vhost);
 CREATE INDEX IF NOT EXISTS idx_requests_week_cat   ON requests(iso_week, category);
+
+CREATE INDEX IF NOT EXISTS idx_agg_net_week ON agg_net(iso_week);
+CREATE INDEX IF NOT EXISTS idx_agg_net_net  ON agg_net(net);
 """
 
 # Columns that identify a log line. Everything else in ``requests`` is derived
