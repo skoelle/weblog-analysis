@@ -30,10 +30,11 @@
     margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  .topbar { position: sticky; top: 0; z-index: 20; background: var(--bg); }
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
     padding: 14px 20px; border-bottom: 1px solid var(--border);
-    background: var(--panel); position: sticky; top: 0; z-index: 20;
+    background: var(--panel);
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
   header h1 span { color: var(--muted); font-weight: 400; }
@@ -96,59 +97,63 @@
   .tab:hover { color: var(--text); border-color: var(--border); }
   .tab.active { background: var(--panel-2); color: var(--text); border-color: var(--border); }
   [hidden] { display: none !important; }
+  .filterWrap { max-width: 1500px; margin: 0 auto; padding: 0 20px 12px; }
   #filterBar {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; margin-bottom: 20px;
+    padding: 10px 12px;
   }
   .settings-card h3 { margin: 0 0 6px; font-size: 14px; }
   .settings-card p { margin: 0 0 12px; color: var(--muted); }
 </style>
 </head>
 <body>
-<header>
-  <h1>Weblog Analysis <span>· combined access logs</span></h1>
-  <nav class="tabs">
-    <button class="tab" data-tab="dashboard">Dashboard</button>
-    <button class="tab" data-tab="analyse">Analyse</button>
-    <button class="tab" data-tab="settings">Settings</button>
-  </nav>
-  <span id="fetchStatus" class="fetch-status" title="No fetch run recorded yet"><span class="dot"></span><span class="txt">no fetch yet</span></span>
-</header>
+<div class="topbar">
+  <header>
+    <h1>Weblog Analysis <span>· combined access logs</span></h1>
+    <nav class="tabs">
+      <button class="tab" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="analyse">Analyse</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+    <span id="fetchStatus" class="fetch-status" title="No fetch run recorded yet"><span class="dot"></span><span class="txt">no fetch yet</span></span>
+  </header>
+  <div class="filterWrap" hidden>
+    <div id="filterBar">
+      <label>Week <select id="fWeek"><option value="">All weeks</option></select></label>
+      <label>Vhost <select id="fVhost"><option value="">All vhosts</option></select></label>
+      <label>Category
+        <select id="fCategory">
+          <option value="">All</option>
+          <option value="browser">Human (browser)</option>
+          <option value="search_bot">Search bots</option>
+          <option value="ai_bot">AI bots</option>
+          <option value="monitoring">Monitoring</option>
+          <option value="scraper">Scrapers</option>
+          <option value="scanner">Scanners</option>
+          <option value="empty">No UA</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <label>Status
+        <select id="fStatus">
+          <option value="">All</option>
+          <option value="2xx">2xx Success</option>
+          <option value="3xx">3xx Redirect</option>
+          <option value="4xx">4xx Client error</option>
+          <option value="5xx">5xx Server error</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="fExcludeSelf" /> Exclude own traffic</label>
+    </div>
+  </div>
+</div>
 
 <main>
-  <div id="filterBar" hidden>
-    <label>Week <select id="fWeek"><option value="">All weeks</option></select></label>
-    <label>Vhost <select id="fVhost"><option value="">All vhosts</option></select></label>
-    <label>Category
-      <select id="fCategory">
-        <option value="">All</option>
-        <option value="browser">Human (browser)</option>
-        <option value="search_bot">Search bots</option>
-        <option value="ai_bot">AI bots</option>
-        <option value="monitoring">Monitoring</option>
-        <option value="scraper">Scrapers</option>
-        <option value="scanner">Scanners</option>
-        <option value="empty">No UA</option>
-        <option value="other">Other</option>
-      </select>
-    </label>
-    <label>Status
-      <select id="fStatus">
-        <option value="">All</option>
-        <option value="2xx">2xx Success</option>
-        <option value="3xx">3xx Redirect</option>
-        <option value="4xx">4xx Client error</option>
-        <option value="5xx">5xx Server error</option>
-      </select>
-    </label>
-    <label><input type="checkbox" id="fExcludeSelf" /> Exclude own traffic</label>
-  </div>
-
   <div id="viewPanels">
     <div class="cards" id="cards"></div>
 
-    <section>
+    <section id="sectionWeeks">
       <h2>Weekly visitors and traffic</h2>
       <div class="panel">
         <div id="chartWeeks"></div>
@@ -466,9 +471,16 @@ function showTab(name) {
   if (!TABS.includes(name)) name = "dashboard";
   document.querySelectorAll(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.tab === name));
-  $("filterBar").hidden = name !== "analyse";
+  $("filterWrap").hidden = name !== "analyse";
   $("viewPanels").hidden = name === "settings";
   $("viewSettings").hidden = name !== "settings";
+  const weeks = $("sectionWeeks");
+  if (name === "analyse") {
+    $("viewPanels").appendChild(weeks);
+  } else {
+    const anchor = $("viewPanels").querySelector(".grid-2");
+    $("viewPanels").insertBefore(weeks, anchor);
+  }
   if (name !== "settings") refreshAll();
 }
 
